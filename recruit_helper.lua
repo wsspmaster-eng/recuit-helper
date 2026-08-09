@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('2.0.4')
-script_description('Recruit Helper 2.0.4: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('2.0.5')
+script_description('Recruit Helper 2.0.5: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -26,7 +26,7 @@ local CONFIG = {
     outboundDelayMs = 3000,      -- единая пауза между ЛЮБЫМИ сообщениями/чат-командами, отправляемыми на сервер
     chatDelayMs = 3000,          -- совместимость со старой логикой; фактический минимум задаёт outboundDelayMs
     retryQuestionDelayMs = 5000, -- пауза между RP-примером (брендом) и повторным вопросом Q2
-    hotkeyAltN = true,            -- Alt + N запускает то же, что /near
+    hotkeyAltN = true,            -- Alt + 1 запускает то же, что /near
     debug = true,
     fileLog = true,              -- писать обычную диагностику и health-check в файл
     packetLog = false,            -- v2.0.4: сырое логирование пакетов выключено по умолчанию
@@ -48,9 +48,9 @@ local CONFIG = {
     -- Обновление Recruit Helper.
     -- Нужен внешний HTTP/HTTPS адрес. Пока URL пустые, /update честно сообщит,
     -- что сервер обновлений не настроен.
-    updateManifestUrl = '',        -- пример: https://site.example/recruit-helper/version.txt
-    updateScriptUrl = '',          -- пример: https://site.example/recruit-helper/recruit_helper.lua
-    updateCheckOnStart = false,    -- автоматическая проверка при входе
+    updateManifestUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/version.txt',        -- пример: https://site.example/recruit-helper/version.txt
+    updateScriptUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/recruit_helper.lua',          -- пример: https://site.example/recruit-helper/recruit_helper.lua
+    updateCheckOnStart = true,    -- автоматическая проверка при входе
 
     -- Автобиндер.
     autoBinderEnabled = true,          -- общий мастер-переключатель автобиндера
@@ -695,7 +695,7 @@ end
 
 
 -- ============================================================================
--- AUTO VOiS — встроено в Recruit Helper 2.0.4
+-- AUTO VOiS — встроено в Recruit Helper 2.0.5
 -- ============================================================================
 local AUTO_VOIS = {
     enabled = true,
@@ -2061,7 +2061,7 @@ local function openRpQuestionMenu()
     session.answers = {}
     session.deadline = 0
     session.rpCurrent = nil
-    chatInfo('Выберите RP-вопрос цифрами 1-5 в верхнем ряду клавиатуры. Alt+E в меню — перейти к проверке терминов.')
+    chatInfo('Выберите RP-вопрос цифрами 1-5 в верхнем ряду клавиатуры. 2 в меню — перейти к проверке терминов.')
 end
 
 local function askRpMenuQuestion(index)
@@ -2080,7 +2080,7 @@ local function askRpMenuQuestion(index)
     session.answers = {}
     session.deadline = 0
     sendCandidateLine(q.text)
-    chatInfo('Задан RP-вопрос: ' .. q.short .. '. Таймера нет. После полного ответа нажмите Alt+E.')
+    chatInfo('Задан RP-вопрос: ' .. q.short .. '. Таймера нет. После полного ответа нажмите 2.')
 end
 
 -- но не стандартная OOC/RP-расшифровка игрового термина.
@@ -2159,13 +2159,13 @@ local function beginQuestion(stage)
     if stage == 'q1' then
         session.deadline = 0
         sendCandidateLine('Расскажите о себе.')
-        chatInfo('Ручной режим: таймера нет. Ждите полный ответ и нажмите Alt+E, когда будете готовы продолжить.')
+        chatInfo('Ручной режим: таймера нет. Ждите полный ответ и нажмите 2, когда будете готовы продолжить.')
     elseif stage == 'q2' then
         session.deadline = 0
         session.q2Term = pickTermQuestion(nil)
         session.q2FirstTermCode = session.q2Term.code
         sendCandidateLine('Что такое «' .. session.q2Term.label .. '»?')
-        chatInfo('Скрытая RP-проверка: термин ' .. session.q2Term.label .. '. Таймера нет; после полного ответа нажмите Alt+E.')
+        chatInfo('Скрытая RP-проверка: термин ' .. session.q2Term.label .. '. Таймера нет; после полного ответа нажмите 2.')
     elseif stage == 'q2_retry' then
         session.deadline = 0
         session.q2Term = pickTermQuestion(session.q2FirstTermCode)
@@ -2197,14 +2197,14 @@ local function beginQuestion(stage)
             session.stage = 'q2_retry'
             session.answers = {}
             session.deadline = 0
-            chatInfo('Задан повторный RP-термин: ' .. retryLabel .. '. Подсказка и вопрос отправлены одной строкой; таймера нет, после полного ответа нажмите Alt+E.')
+            chatInfo('Задан повторный RP-термин: ' .. retryLabel .. '. Подсказка и вопрос отправлены одной строкой; таймера нет, после полного ответа нажмите 2.')
         end)
 
         chatInfo('Первая проверка термина не пройдена. Подсказка и повторный Q2 отправляются кандидату одним сообщением.')
     elseif stage == 'q3' then
         session.deadline = 0
         sendCandidateLine('Что у меня над головой?')
-        chatInfo('Таймера нет. После полного ответа нажмите Alt+E для проверки.')
+        chatInfo('Таймера нет. После полного ответа нажмите 2 для проверки.')
     end
 end
 
@@ -3154,7 +3154,7 @@ local function manualAdvanceInterview()
         openRpQuestionMenu()
 
     elseif stage == 'rp_menu' then
-        -- Alt+E прямо в меню означает «RP-вопросов достаточно, перейти к терминам».
+        -- 2 прямо в меню означает «RP-вопросов достаточно, перейти к терминам».
         beginQuestion('q2')
 
     elseif stage == 'q2' or stage == 'q2_retry' then
@@ -3174,7 +3174,7 @@ local function manualAdvanceInterview()
         end
 
     else
-        chatInfo('Alt+E используется на этапе собеседования после проверки документов.')
+        chatInfo('2 используется на этапе собеседования после проверки документов.')
     end
 end
 
@@ -3219,30 +3219,30 @@ local function getInterviewHudLines()
     elseif stage == 'documents_licenses' then
         lines = {'RECRUIT', 'Лицензии проверены', 'Следующее: открыть медкарту'}
     elseif stage == 'q1' then
-        lines = {'СОБЕСЕДОВАНИЕ', 'Сейчас: рассказ о себе', 'Alt+E: выбрать следующий RP-вопрос'}
+        lines = {'СОБЕСЕДОВАНИЕ', 'Сейчас: рассказ о себе', '2: выбрать следующий RP-вопрос'}
     elseif stage == 'rp_menu' then
         lines = {'ВЫБОР RP-ВОПРОСА'}
         for i = 1, 5 do
             local q = session.rpMenuChoices and session.rpMenuChoices[i] or nil
             lines[#lines + 1] = q and (tostring(i) .. ': ' .. q.short) or (tostring(i) .. ': —')
         end
-        lines[#lines + 1] = 'Alt+E: перейти к терминам'
+        lines[#lines + 1] = '2: перейти к терминам'
     elseif stage == 'rp_custom' then
         local short = session.rpCurrent and session.rpCurrent.short or 'RP-вопрос'
-        lines = {'СОБЕСЕДОВАНИЕ', 'Сейчас: ' .. short, 'Таймера нет', 'Alt+E: выбор следующего вопроса'}
+        lines = {'СОБЕСЕДОВАНИЕ', 'Сейчас: ' .. short, 'Таймера нет', '2: выбор следующего вопроса'}
     elseif stage == 'q2' or stage == 'q2_retry' then
         local label = session.q2Term and session.q2Term.label or 'термин'
-        lines = {'ПРОВЕРКА ТЕРМИНА', 'Сейчас: «' .. label .. '»', 'Таймера нет', 'Alt+E: проверить полный ответ'}
+        lines = {'ПРОВЕРКА ТЕРМИНА', 'Сейчас: «' .. label .. '»', 'Таймера нет', '2: проверить полный ответ'}
     elseif stage == 'q2_retry_hint' then
         lines = {'ПРОВЕРКА ТЕРМИНА', 'Подсказка отправлена', 'Следующий термин через антифлуд-паузу'}
     elseif stage == 'q3' then
-        lines = {'ФИНАЛЬНЫЙ ВОПРОС', 'Что у меня над головой?', 'Таймера нет', 'Alt+E: проверить полный ответ'}
+        lines = {'ФИНАЛЬНЫЙ ВОПРОС', 'Что у меня над головой?', 'Таймера нет', '2: проверить полный ответ'}
     else
         return nil
     end
 
     -- Быстрое ручное принятие доступно на любом активном этапе.
-    lines[#lines + 1] = 'E+R: принять сразу'
+    lines[#lines + 1] = 'F: принять сразу'
     return lines
 end
 
@@ -3276,8 +3276,8 @@ end
 -- NumPad намеренно не используется.
 local TOP_NUMBER_KEYS = {0x31, 0x32, 0x33, 0x34, 0x35}
 
-local KEY_E = vkeys.VK_E or 0x45
-local KEY_R = vkeys.VK_R or 0x52
+local KEY_2 = 0x32 -- верхний ряд цифр, не NumPad
+local KEY_F = vkeys.VK_F or 0x46
 
 local function forceAcceptCurrentCandidate()
     if not session.active then
@@ -3290,23 +3290,20 @@ local function forceAcceptCurrentCandidate()
         return
     end
 
-    chatInfo('E+R: оставшиеся этапы пропущены. Кандидат будет принят вручную.')
+    chatInfo('F: оставшиеся этапы пропущены. Кандидат будет принят вручную.')
     finishSuccess()
 end
 
 local function handleInterviewHotkeys()
     if not session.active or sampIsChatInputActive() or sampIsDialogActive() then return end
 
-    -- E+R: мгновенно завершить текущую проверку успешным принятием.
-    -- Срабатывает независимо от порядка нажатия: можно держать E и нажать R
-    -- либо держать R и нажать E. До обработки Alt+E, чтобы комбинации не конфликтовали.
-    if (isKeyDown(KEY_E) and wasKeyPressed(KEY_R))
-        or (isKeyDown(KEY_R) and wasKeyPressed(KEY_E)) then
+    -- F: мгновенно завершить текущую проверку успешным принятием.
+    if wasKeyPressed(KEY_F) then
         forceAcceptCurrentCandidate()
         return
     end
 
-    if isKeyDown(vkeys.VK_MENU) and wasKeyPressed(KEY_E) then
+    if wasKeyPressed(KEY_2) then
         manualAdvanceInterview()
         return
     end
@@ -3348,7 +3345,7 @@ local function processDeadline()
 
     elseif stage == 'q1' or stage == 'rp_custom' or stage == 'q2' or stage == 'q2_retry' or stage == 'q3' then
         -- v1.4.0: интервью полностью ручное. Даже принудительный дедлайн не двигает этап.
-        chatInfo('На этапе собеседования таймеры отключены. Используйте Alt+E для перехода/проверки ответа.')
+        chatInfo('На этапе собеседования таймеры отключены. Используйте 2 для перехода/проверки ответа.')
     end
 end
 
@@ -3848,7 +3845,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '2.0.4'
+    return '2.0.5'
 end
 
 local function updaterDownload(url, path, callback)
@@ -3857,32 +3854,59 @@ local function updaterDownload(url, path, callback)
         return
     end
 
+    -- Удаляем старый временный файл, чтобы не прочитать остаток прошлой загрузки.
+    if doesFileExist(path) then
+        pcall(os.remove, path)
+    end
+
     local finished = false
-    downloadUrlToFile(url, path, function(id, status, p1, p2)
-        if finished then return end
 
-        local isFinished = false
-        local isError = false
+    local ok, err = pcall(function()
+        downloadUrlToFile(url, path, function(id, status, p1, p2)
+            if finished then return end
 
-        if dlstatus then
-            isFinished = status == dlstatus.STATUS_ENDDOWNLOADDATA
-                or status == dlstatus.STATUSEX_ENDDOWNLOAD
-            isError = status == dlstatus.STATUS_ERROR
-                or status == dlstatus.STATUSEX_ERROR
-                or status == dlstatus.STATUS_ABORT
-        else
-            -- Fallback: MoonLoader commonly reports 6 at end of data.
-            isFinished = status == 6
-        end
+            if dlstatus then
+                -- STATUS_ENDDOWNLOADDATA может прийти до окончательной записи файла на диск.
+                -- Продолжаем только после полного завершения загрузки.
+                if status == dlstatus.STATUSEX_ENDDOWNLOAD then
+                    finished = true
 
-        if isFinished then
-            finished = true
-            callback(true)
-        elseif isError then
-            finished = true
-            callback(false, 'ошибка загрузки, status=' .. tostring(status))
-        end
+                    scheduleAction(200, function()
+                        if doesFileExist(path) then
+                            callback(true)
+                        else
+                            callback(false, 'файл после загрузки не найден: ' .. tostring(path))
+                        end
+                    end)
+
+                elseif status == dlstatus.STATUS_ERROR
+                    or status == dlstatus.STATUSEX_ERROR
+                    or status == dlstatus.STATUS_ABORT then
+
+                    finished = true
+                    callback(false, 'ошибка загрузки, status=' .. tostring(status))
+                end
+            else
+                -- Fallback для сборок MoonLoader без download_status.
+                if status == 6 then
+                    finished = true
+
+                    scheduleAction(300, function()
+                        if doesFileExist(path) then
+                            callback(true)
+                        else
+                            callback(false, 'файл после загрузки не найден: ' .. tostring(path))
+                        end
+                    end)
+                end
+            end
+        end)
     end)
+
+    if not ok then
+        finished = true
+        callback(false, 'не удалось запустить загрузку: ' .. tostring(err))
+    end
 end
 
 local function installDownloadedScript(tempPath)
@@ -3936,7 +3960,21 @@ local function checkForUpdate(manual)
     end
 
     UPDATE_STATE.busy = true
-    local base = getWorkingDirectory() .. '\\moonloader\\'
+
+    -- Временные файлы обновления создаём рядом с текущим скриптом.
+    -- Это важно для Arizona Launcher: getWorkingDirectory() в некоторых сборках
+    -- уже может указывать на папку moonloader, поэтому дописывание \\moonloader\\
+    -- давало ошибочный путь ...\\moonloader\\moonloader\\...
+    local thisPath = thisScript() and thisScript().path or ''
+    local base = thisPath:match('^(.*[\\/])')
+
+    if not base or base == '' then
+        base = tostring(getWorkingDirectory() or '')
+        if base:sub(-1) ~= '\\' and base:sub(-1) ~= '/' then
+            base = base .. '\\'
+        end
+    end
+
     local manifestPath = base .. 'recruit_helper_update_version.tmp'
     local scriptTempPath = base .. 'recruit_helper_update_script.tmp'
     UPDATE_STATE.manifestPath = manifestPath
@@ -4109,11 +4147,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 2.0.4 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 2.0.5 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Загружен v2.0.4. /near или Alt+N. Интервью: Alt+E, вопросы: 1-5 сверху, E+R: принять сразу.')
+    chatInfo('Загружен v2.0.4. /near или Alt+1. Интервью: 2, вопросы: 1-5 сверху, F: принять сразу.')
     chatInfo('Строй: /str [минуты]. Обновление: /update.')
     chatInfo('Автобиндер запущен с таймера: первая реклама только через 60 минут. /bindon /bindoff /bindstatus.')
     chatInfo('Отдельно: /bpon /bpoff (Battle Pass), /dcon /dcoff (Discord), вручную: /battlepass /discordls.')
@@ -4142,7 +4180,7 @@ end
             and not sampIsChatInputActive()
             and not sampIsDialogActive()
             and isKeyDown(vkeys.VK_MENU)
-            and wasKeyPressed(vkeys.VK_N) then
+            and wasKeyPressed(0x31) then
             startNearest()
         end
 
