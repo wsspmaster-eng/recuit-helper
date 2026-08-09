@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('2.0.9')
-script_description('Recruit Helper 2.0.9: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('2.1.0')
+script_description('Recruit Helper 2.1.0: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -3878,7 +3878,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v2.0.8 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v2.1.0 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -3935,7 +3935,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '2.0.9'
+    return '2.1.0'
 end
 
 local function updaterDownload(url, path, callback)
@@ -4180,7 +4180,7 @@ end
 
 
 
--- ================== BUILD TIMER 2.0.9 ==================
+-- ================== BUILD TIMER 2.1.0 ==================
 local buildTimerId = 0
 
 local function startBuildTimer(arg)
@@ -4214,13 +4214,21 @@ local function cancelBuildTimer()
 end
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 2.0.9 ==========')
+    chatInfo('========== Recruit Helper 2.1.0 ==========')
+    chatInfo('/near - показать ближайшего игрока')
+    chatInfo('/rrp - выдать /fractionrp игрокам рядом')
     chatInfo('/l [минуты] - объявить построение на плацу')
     chatInfo('/cl - отменить построение')
-    chatInfo('/rrp - выдать /fractionrp всем игрокам рядом')
-    chatInfo('/near - показать ближайших игроков')
+    chatInfo('/str [минуты] - объявить построение (старый алиас)')
     chatInfo('/update - проверить обновление')
-    chatInfo('/rhelp - показать список команд')
+    chatInfo('/autovois - включить/выключить Auto VOiS')
+    chatInfo('/avstate - статус Auto VOiS')
+    chatInfo('/bindon /bindoff - управление автобиндером')
+    chatInfo('/bindstatus - статус автобиндера')
+    chatInfo('/battlepass - отправить Battle Pass')
+    chatInfo('/discordls - отправить Discord')
+    chatInfo('/rdiag - диагностика')
+    chatInfo('/rhelp - этот список команд')
     chatInfo('==========================================')
 end
 
@@ -4287,14 +4295,12 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 2.0.9 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 2.1.0 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Загружен v2.0.8. /near или Alt+1. Интервью: 2, вопросы: 1-5 сверху, F: принять сразу.')
-    chatInfo('Строй: /str [минуты]. Обновление: /update.')
-    chatInfo('Автобиндер запущен с таймера: первая реклама только через 60 минут. /bindon /bindoff /bindstatus.')
-    chatInfo('Отдельно: /bpon /bpoff (Battle Pass), /dcon /dcoff (Discord), вручную: /battlepass /discordls.')
+    chatInfo('Recruit Helper 2.1.0 загружен.')
+    chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
     if CONFIG.updateCheckOnStart then
