@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('2.0.6')
-script_description('Recruit Helper 2.0.6: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('2.0.8')
+script_description('Recruit Helper 2.0.8: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -64,6 +64,43 @@ local CONFIG = {
 }
 
 local PREFIX = '{84D7FF}[Recruit]{FFFFFF} '
+
+
+-- v2.0.7: защита создателя и его друга от случайных ударов
+local CREATOR_WARN_COOLDOWN = 0
+
+local function playAnnoyingWarningSound()
+    -- тихий короткий неприятный звук через встроенный звук SA-MP
+    pcall(function()
+        sampPlaySound(1085, 0, 0)
+    end)
+end
+
+local function checkProtectedHit(playerId)
+    local now = os.clock() * 1000
+    if now - CREATOR_WARN_COOLDOWN < 1500 then
+        return
+    end
+
+    local nick = sampGetPlayerNickname(playerId)
+    if not nick then return end
+
+    if nick == 'Suleyman_Kanuni' then
+        CREATOR_WARN_COOLDOWN = now
+        sampAddChatMessage(
+            'НЕ БЕЙТЕ СОЗДАТЕЛЯ СКРИПТА :goblin::goblin::goblin::goblin:!!!!!!',
+            0xFF4444
+        )
+        playAnnoyingWarningSound()
+    elseif nick == 'Jensen_Ackles' then
+        CREATOR_WARN_COOLDOWN = now
+        sampAddChatMessage(
+            'НЕ БЕЙТЕ ДРУГА СОЗДАТЕЛЯ:goblin::goblin:!!',
+            0xFFCC44
+        )
+        playAnnoyingWarningSound()
+    end
+end
 
 local session = {
     active = false,
@@ -1674,10 +1711,12 @@ local function giveFractionRpInRadius()
 
     local ids = {}
 
-    for _, player in ipairs(players) do
-        sampSendChat('/fractionrp ' .. tostring(player.id))
+    for index, player in ipairs(players) do
         ids[#ids + 1] = tostring(player.id)
-        wait(300)
+
+        scheduleAction((index - 1) * 300, function()
+            sampSendChat('/fractionrp ' .. tostring(player.id))
+        end)
     end
 
     chatInfo('Выдано /fractionrp игрокам: ' .. table.concat(ids, ', ') ..
@@ -3122,6 +3161,11 @@ local function handleTargetSpeech(body)
 end
 
 -- Обычный SA-MP чат приходит именно этим RPC, без ника внутри текста.
+-- v2.0.7: срабатывает когда игрок наносит урон другому игроку
+function sampev.onSendGiveDamage(playerId, damage, weapon, bodypart)
+    checkProtectedHit(tonumber(playerId))
+end
+
 function sampev.onChatMessage(playerId, text)
     if session.active and tonumber(playerId) == tonumber(session.targetId) then
         handleTargetSpeech(text)
@@ -3834,7 +3878,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v2.0.4 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v2.0.8 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -3891,7 +3935,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '2.0.6'
+    return '2.0.8'
 end
 
 local function updaterDownload(url, path, callback)
@@ -4194,11 +4238,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 2.0.5 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 2.0.8 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Загружен v2.0.6. /near или Alt+1. Интервью: 2, вопросы: 1-5 сверху, F: принять сразу.')
+    chatInfo('Загружен v2.0.8. /near или Alt+1. Интервью: 2, вопросы: 1-5 сверху, F: принять сразу.')
     chatInfo('Строй: /str [минуты]. Обновление: /update.')
     chatInfo('Автобиндер запущен с таймера: первая реклама только через 60 минут. /bindon /bindoff /bindstatus.')
     chatInfo('Отдельно: /bpon /bpoff (Battle Pass), /dcon /dcoff (Discord), вручную: /battlepass /discordls.')
