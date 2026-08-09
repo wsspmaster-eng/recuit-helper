@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('2.1.2')
-script_description('Recruit Helper 2.1.2: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('2.1.3')
+script_description('Recruit Helper 2.1.3: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -3878,7 +3878,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v2.1.2 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v2.1.3 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -3935,7 +3935,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '2.1.2'
+    return '2.1.3'
 end
 
 local function updaterDownload(url, path, callback)
@@ -4180,13 +4180,13 @@ end
 
 
 
--- ================== BUILD TIMER 2.1.2 ==================
+-- ================== BUILD TIMER 2.1.3 ==================
 local buildTimerId = 0
 
 local function startBuildTimer(arg)
     local minutes = tonumber(trim(arg))
     if not minutes or minutes < 1 then
-        chatInfo('Использование: /l [минуты]')
+        chatInfo('Использование: (удалено)')
         return
     end
 
@@ -4214,11 +4214,11 @@ local function cancelBuildTimer()
 end
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 2.1.2 ==========')
+    chatInfo('========== Recruit Helper 2.1.3 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
-    chatInfo('/l [минуты]')
+    chatInfo('(удалено)')
     chatInfo('/cl')
     chatInfo('/str [минуты]')
     chatInfo('/update')
@@ -4264,7 +4264,7 @@ end
 
     sampRegisterChatCommand('near', startNearest)
     sampRegisterChatCommand('rrp', giveFractionRpInRadius)
-    sampRegisterChatCommand('l', startBuildTimer)
+    sampRegisterChatCommand('removed_l', startBuildTimer)
     sampRegisterChatCommand('cl', cancelBuildTimer)
     sampRegisterChatCommand('rhelp', showRecruitHelp)
     sampRegisterChatCommand('recruit', function(arg)
@@ -4325,11 +4325,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 2.1.2 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 2.1.3 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Recruit Helper 2.1.2 загружен.')
+    chatInfo('Recruit Helper 2.1.3 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
