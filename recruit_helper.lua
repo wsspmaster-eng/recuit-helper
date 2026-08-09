@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('2.1.3')
-script_description('Recruit Helper 2.1.3: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('2.1.5')
+script_description('Recruit Helper 2.1.5: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -88,7 +88,7 @@ local function checkProtectedHit(playerId)
     if nick == 'Suleyman_Kanuni' then
         CREATOR_WARN_COOLDOWN = now
         sampAddChatMessage(
-            'НЕ БЕЙТЕ СОЗДАТЕЛЯ СКРИПТА :goblin::goblin::goblin::goblin:!!!!!!',
+            'НЕ БЕЙТЕ СОЗДАТЕЛЯ СКРИПТА :goblin::goblin::goblin::goblin:!!!!!!!!',
             0xFF4444
         )
         playAnnoyingWarningSound()
@@ -3316,7 +3316,7 @@ local function getInterviewHudLines()
             local q = session.rpMenuChoices and session.rpMenuChoices[i] or nil
             lines[#lines + 1] = q and (tostring(i) .. ': ' .. q.short) or (tostring(i) .. ': —')
         end
-        lines[#lines + 1] = '2: перейти к терминам'
+        lines[#lines + 1] = 'ALT: перейти к терминам'
     elseif stage == 'rp_custom' then
         local short = session.rpCurrent and session.rpCurrent.short or 'RP-вопрос'
         lines = {'СОБЕСЕДОВАНИЕ', 'Сейчас: ' .. short, 'Таймера нет', '2: выбор следующего вопроса'}
@@ -3878,7 +3878,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v2.1.3 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v2.1.5 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -3935,7 +3935,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '2.1.3'
+    return '2.1.5'
 end
 
 local function updaterDownload(url, path, callback)
@@ -4180,7 +4180,7 @@ end
 
 
 
--- ================== BUILD TIMER 2.1.3 ==================
+-- ================== BUILD TIMER 2.1.5 ==================
 local buildTimerId = 0
 
 local function startBuildTimer(arg)
@@ -4214,7 +4214,7 @@ local function cancelBuildTimer()
 end
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 2.1.3 ==========')
+    chatInfo('========== Recruit Helper 2.1.5 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -4325,11 +4325,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 2.1.3 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 2.1.5 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Recruit Helper 2.1.3 загружен.')
+    chatInfo('Recruit Helper 2.1.5 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
