@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('2.0.5')
-script_description('Recruit Helper 2.0.5: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('2.0.6')
+script_description('Recruit Helper 2.0.6: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -1636,6 +1636,52 @@ local function startRecruitment(id, options)
     sendCandidateLine('Здравия желаю, Вы на призыв?')
     chatInfo(string.format('%sКандидат: %s[%d]. Ожидаю положительный ответ.',
         session.testMode and '[TEST] ' or '', session.targetName, id))
+end
+
+
+local function giveFractionRpInRadius()
+    local selfOk, selfId = sampGetPlayerIdByCharHandle(PLAYER_PED)
+    local px, py, pz = getCharCoordinates(PLAYER_PED)
+
+    local players = {}
+    local maxId = sampGetMaxPlayerId(true)
+
+    for id = 0, maxId do
+        if (not selfOk or id ~= selfId) and sampIsPlayerConnected(id) then
+            local streamed, ped = sampGetCharHandleBySampPlayerId(id)
+            if streamed and doesCharExist(ped) then
+                local x, y, z = getCharCoordinates(ped)
+                local dist = getDistanceBetweenCoords3d(px, py, pz, x, y, z)
+
+                if dist <= CONFIG.nearDistance then
+                    players[#players + 1] = {
+                        id = id,
+                        distance = dist
+                    }
+                end
+            end
+        end
+    end
+
+    if #players == 0 then
+        chatInfo('В радиусе ' .. tostring(CONFIG.nearDistance) .. ' м. игроков нет.')
+        return
+    end
+
+    table.sort(players, function(a, b)
+        return a.distance < b.distance
+    end)
+
+    local ids = {}
+
+    for _, player in ipairs(players) do
+        sampSendChat('/fractionrp ' .. tostring(player.id))
+        ids[#ids + 1] = tostring(player.id)
+        wait(300)
+    end
+
+    chatInfo('Выдано /fractionrp игрокам: ' .. table.concat(ids, ', ') ..
+        ' | Радиус: ' .. tostring(CONFIG.nearDistance) .. ' м.')
 end
 
 local function startNearest()
@@ -3845,7 +3891,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '2.0.5'
+    return '2.0.6'
 end
 
 local function updaterDownload(url, path, callback)
@@ -4089,6 +4135,7 @@ end
     end)
 
     sampRegisterChatCommand('near', startNearest)
+    sampRegisterChatCommand('rrp', giveFractionRpInRadius)
     sampRegisterChatCommand('recruit', function(arg)
         local id = tonumber(trim(arg))
         if id then
@@ -4151,7 +4198,7 @@ end
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Загружен v2.0.4. /near или Alt+1. Интервью: 2, вопросы: 1-5 сверху, F: принять сразу.')
+    chatInfo('Загружен v2.0.6. /near или Alt+1. Интервью: 2, вопросы: 1-5 сверху, F: принять сразу.')
     chatInfo('Строй: /str [минуты]. Обновление: /update.')
     chatInfo('Автобиндер запущен с таймера: первая реклама только через 60 минут. /bindon /bindoff /bindstatus.')
     chatInfo('Отдельно: /bpon /bpoff (Battle Pass), /dcon /dcoff (Discord), вручную: /battlepass /discordls.')
