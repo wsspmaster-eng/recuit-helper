@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('2.2.14')
-script_description('Recruit Helper 2.2.14: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('2.2.16')
+script_description('Recruit Helper 2.2.16: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -53,12 +53,12 @@ local CONFIG = {
     updateAssets = {
         {
             name = 'fart.mp3',
-            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/main/moonloader/hit_warnings/fart.mp3',
+            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit_warnings/fart.mp3',
             relativePath = 'moonloader\\hit-warnings\\fart.mp3',
         },
         {
             name = 'warning.mp3',
-            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/main/moonloader/hit_warnings/warning.mp3',
+            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit_warnings/warning.mp3',
             relativePath = 'moonloader\\hit-warnings\\warning.mp3',
         },
     },
@@ -4074,7 +4074,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v2.2.14 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v2.2.16 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -4131,58 +4131,116 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '2.2.14'
+    return '2.2.16'
 end
 
 local function updaterDownload(url, path, callback)
+    local callbackDone = false
+
+    local function downloadedFileExists()
+        local f = io.open(path, 'rb')
+        if not f then return false end
+        local size = f:seek('end') or 0
+        f:close()
+        return tonumber(size) ~= nil and tonumber(size) > 0
+    end
+
+    local function finish(ok, err)
+        if callbackDone then return end
+        callbackDone = true
+        callback(ok, err)
+    end
+
+    -- Fallback для сборок Arizona, где downloadUrlToFile сообщает END,
+    -- но бинарный файл фактически не появляется. Сначала пробуем curl.exe,
+    -- затем штатный Windows PowerShell.
+    local function systemFallback(reason)
+        if callbackDone then return end
+        pcall(os.remove, path)
+
+        local safeUrl = tostring(url or ''):gsub('"', '')
+        local safePath = tostring(path or ''):gsub('"', '')
+
+        local curlCommand = 'curl.exe -L --fail --silent --show-error --connect-timeout 15 --max-time 60 '
+            .. '-o "' .. safePath .. '" "' .. safeUrl .. '" >nul 2>nul'
+        pcall(os.execute, curlCommand)
+
+        if downloadedFileExists() then
+            finish(true)
+            return
+        end
+
+        pcall(os.remove, path)
+
+        local psUrl = tostring(url or ''):gsub("'", "''")
+        local psPath = tostring(path or ''):gsub("'", "''")
+        local psCommand = 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "'
+            .. "$ProgressPreference='SilentlyContinue'; "
+            .. "try { Invoke-WebRequest -UseBasicParsing -Uri '" .. psUrl .. "' -OutFile '" .. psPath .. "'; exit 0 } "
+            .. 'catch { exit 1 }" >nul 2>nul'
+        pcall(os.execute, psCommand)
+
+        if downloadedFileExists() then
+            finish(true)
+            return
+        end
+
+        finish(false, tostring(reason or 'загрузка не удалась') .. '; fallback curl/PowerShell тоже не создал файл')
+    end
+
+    pcall(os.remove, path)
+
     if type(downloadUrlToFile) ~= 'function' then
-        callback(false, 'downloadUrlToFile недоступен')
+        systemFallback('downloadUrlToFile недоступен')
         return
     end
 
-    -- Удаляем старый временный файл, чтобы не прочитать остаток прошлой загрузки.
-    if doesFileExist(path) then
-        pcall(os.remove, path)
-    end
+    local moonloaderFinished = false
 
-    local finished = false
+    local function waitForDownloadedFile(attempt)
+        if callbackDone then return end
+        attempt = tonumber(attempt) or 1
+
+        if downloadedFileExists() then
+            finish(true)
+            return
+        end
+
+        if attempt >= 20 then
+            systemFallback('MoonLoader сообщил завершение, но файл после загрузки не найден: ' .. tostring(path))
+            return
+        end
+
+        scheduleAction(250, function()
+            waitForDownloadedFile(attempt + 1)
+        end)
+    end
 
     local ok, err = pcall(function()
         downloadUrlToFile(url, path, function(id, status, p1, p2)
-            if finished then return end
+            if callbackDone or moonloaderFinished then return end
 
             if dlstatus then
-                -- STATUS_ENDDOWNLOADDATA может прийти до окончательной записи файла на диск.
-                -- Продолжаем только после полного завершения загрузки.
                 if status == dlstatus.STATUSEX_ENDDOWNLOAD then
-                    finished = true
-
-                    scheduleAction(200, function()
-                        if doesFileExist(path) then
-                            callback(true)
-                        else
-                            callback(false, 'файл после загрузки не найден: ' .. tostring(path))
-                        end
+                    moonloaderFinished = true
+                    scheduleAction(250, function()
+                        waitForDownloadedFile(1)
                     end)
 
                 elseif status == dlstatus.STATUS_ERROR
                     or status == dlstatus.STATUSEX_ERROR
                     or status == dlstatus.STATUS_ABORT then
 
-                    finished = true
-                    callback(false, 'ошибка загрузки, status=' .. tostring(status))
+                    moonloaderFinished = true
+                    scheduleAction(0, function()
+                        systemFallback('ошибка downloadUrlToFile, status=' .. tostring(status))
+                    end)
                 end
             else
-                -- Fallback для сборок MoonLoader без download_status.
                 if status == 6 then
-                    finished = true
-
-                    scheduleAction(300, function()
-                        if doesFileExist(path) then
-                            callback(true)
-                        else
-                            callback(false, 'файл после загрузки не найден: ' .. tostring(path))
-                        end
+                    moonloaderFinished = true
+                    scheduleAction(250, function()
+                        waitForDownloadedFile(1)
                     end)
                 end
             end
@@ -4190,11 +4248,10 @@ local function updaterDownload(url, path, callback)
     end)
 
     if not ok then
-        finished = true
-        callback(false, 'не удалось запустить загрузку: ' .. tostring(err))
+        moonloaderFinished = true
+        systemFallback('не удалось запустить downloadUrlToFile: ' .. tostring(err))
     end
 end
-
 
 local function fileSizeBytes(path)
     local f = io.open(path, 'rb')
@@ -4289,10 +4346,20 @@ local function syncUpdateAssets(base, forceDownload, callback)
 
     local index = 1
     local changed = false
+    local errors = {}
+
+    local function addError(message)
+        errors[#errors + 1] = tostring(message or 'неизвестная ошибка ресурса')
+        debugLog('Updater asset error: ' .. tostring(message))
+    end
 
     local function nextAsset()
         if index > #assets then
-            callback(true, nil, changed)
+            if #errors > 0 then
+                callback(false, table.concat(errors, ' | '), changed)
+            else
+                callback(true, nil, changed)
+            end
             return
         end
 
@@ -4302,7 +4369,8 @@ local function syncUpdateAssets(base, forceDownload, callback)
         if type(asset) ~= 'table'
             or type(asset.url) ~= 'string' or asset.url == ''
             or type(asset.relativePath) ~= 'string' or asset.relativePath == '' then
-            callback(false, 'некорректная запись ресурса автообновления', changed)
+            addError('некорректная запись ресурса автообновления #' .. tostring(index - 1))
+            nextAsset()
             return
         end
 
@@ -4318,21 +4386,25 @@ local function syncUpdateAssets(base, forceDownload, callback)
         if folder and folder ~= '' then
             folder = folder:gsub('[\\/]$', '')
             if not ensureDirectory(folder) then
-                callback(false, 'не удалось создать папку для ' .. tostring(asset.name or asset.relativePath), changed)
+                addError('не удалось создать папку для ' .. tostring(asset.name or asset.relativePath))
+                nextAsset()
                 return
             end
         end
 
-        local tempPath = destinationPath .. '.download.tmp'
+        local safeTempName = tostring(asset.name or ('asset_' .. tostring(index)))
+            :gsub('[^%w%._%-]', '_')
+        local tempPath = base .. 'recruit_update_' .. safeTempName .. '.tmp'
+        pcall(os.remove, tempPath)
+
+        chatInfo('Ресурс: скачиваю ' .. tostring(asset.name or asset.relativePath) .. '...')
+
         updaterDownload(asset.url, tempPath, function(okDownload, downloadErr)
             if not okDownload then
                 pcall(os.remove, tempPath)
-                callback(
-                    false,
-                    'не удалось скачать ' .. tostring(asset.name or asset.relativePath)
-                        .. ': ' .. tostring(downloadErr),
-                    changed
-                )
+                addError('не удалось скачать ' .. tostring(asset.name or asset.relativePath)
+                    .. ': ' .. tostring(downloadErr))
+                nextAsset()
                 return
             end
 
@@ -4340,16 +4412,14 @@ local function syncUpdateAssets(base, forceDownload, callback)
             pcall(os.remove, tempPath)
 
             if not installed then
-                callback(
-                    false,
-                    'не удалось установить ' .. tostring(asset.name or asset.relativePath)
-                        .. ': ' .. tostring(installErr),
-                    changed
-                )
+                addError('не удалось установить ' .. tostring(asset.name or asset.relativePath)
+                    .. ': ' .. tostring(installErr))
+                nextAsset()
                 return
             end
 
             changed = true
+            chatInfo('Ресурс установлен: ' .. tostring(asset.name or asset.relativePath) .. '.')
             debugLog('Updater asset installed: ' .. tostring(asset.relativePath))
             nextAsset()
         end)
@@ -4554,7 +4624,7 @@ end
 
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 2.2.14 ==========')
+    chatInfo('========== Recruit Helper 2.2.16 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -4676,11 +4746,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 2.2.14 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 2.2.16 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Recruit Helper 2.2.14 загружен.')
+    chatInfo('Recruit Helper 2.2.16 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
