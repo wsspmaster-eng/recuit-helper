@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('2.2.11')
-script_description('Recruit Helper 2.2.11: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('2.2.13')
+script_description('Recruit Helper 2.2.13: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -50,6 +50,18 @@ local CONFIG = {
     -- что сервер обновлений не настроен.
     updateManifestUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/version.txt',        -- пример: https://site.example/recruit-helper/version.txt
     updateScriptUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/recruit_helper.lua',          -- пример: https://site.example/recruit-helper/recruit_helper.lua
+    updateAssets = {
+        {
+            name = 'fart.mp3',
+            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit-warnings/fart.mp3',
+            relativePath = 'moonloader\\hit-warnings\\fart.mp3',
+        },
+        {
+            name = 'warning.mp3',
+            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit-warnings/warning.mp3',
+            relativePath = 'moonloader\\hit-warnings\\warning.mp3',
+        },
+    },
     updateCheckOnStart = true,    -- автоматическая проверка при входе
 
     -- Автобиндер.
@@ -66,7 +78,7 @@ local CONFIG = {
 local PREFIX = '{84D7FF}[Recruit]{FFFFFF} '
 
 
--- v2.0.7: защита создателя и его друга от случайных ударов
+-- v2.0.7: защита друга создателя от случайных ударов
 local CREATOR_WARN_COOLDOWN = 0
 
 local function playAnnoyingWarningSound()
@@ -85,14 +97,7 @@ local function checkProtectedHit(playerId)
     local nick = sampGetPlayerNickname(playerId)
     if not nick then return end
 
-    if nick == 'Suleyman_Kanuni' then
-        CREATOR_WARN_COOLDOWN = now
-        sampAddChatMessage(
-            '!!',
-            0xFF4444
-        )
-        playAnnoyingWarningSound()
-    elseif nick == 'Jensen_Ackles' then
+    if nick == 'Jensen_Ackles' then
         CREATOR_WARN_COOLDOWN = now
         sampAddChatMessage(
             'НЕ БЕЙТЕ ДРУГА СОЗДАТЕЛЯ:goblin::goblin:!!',
@@ -1728,6 +1733,7 @@ local function consentHasTypoPositive(answer)
     -- реальные опечатки перечислены отдельно.
     local shortTypos = {
         cp('нда'), cp('дда'), cp('даа'), cp('ддаа'), cp('дп'), cp('даж'),
+        cp('жа'), cp('дэ'), cp('йа'), cp('дас'),
         'yess', 'yees', 'yse', 'ys', 'yep'
     }
     for _, word in ipairs(words) do
@@ -1784,7 +1790,7 @@ local function isPositiveConsent(answer)
         cp('готов'), cp('готова'), cp('давай'), cp('погнали'),
         cp('точно'), cp('есть'), cp('согласен'), cp('согласна'),
         cp('разумеется'), cp('безусловно'), cp('верно'),
-        cp('ес'), cp('йес'),
+        cp('ес'), cp('йес'), cp('жа'), cp('дэ'), cp('йа'), cp('дас'),
         'yes', 'yeah', 'yep', 'ye', 'y', 'ok', 'okay', 'affirmative'
     }
     for _, word in ipairs(positiveWords) do
@@ -2097,7 +2103,7 @@ local function openRpQuestionMenu()
     session.answers = {}
     session.deadline = 0
     session.rpCurrent = nil
-    chatInfo('Выберите RP-вопрос цифрами 1-5 в верхнем ряду клавиатуры. 2 в меню — перейти к проверке терминов.')
+    chatInfo('Выберите RP-вопрос цифрами 1-5 в верхнем ряду клавиатуры. ALT в меню — перейти к проверке терминов.')
 end
 
 local function askRpMenuQuestion(index)
@@ -2116,7 +2122,7 @@ local function askRpMenuQuestion(index)
     session.answers = {}
     session.deadline = 0
     sendCandidateLine(q.text)
-    chatInfo('Задан RP-вопрос: ' .. q.short .. '. Таймера нет. После полного ответа нажмите 2.')
+    chatInfo('Задан RP-вопрос: ' .. q.short .. '. Таймера нет. После полного ответа нажмите ALT.')
 end
 
 -- но не стандартная OOC/RP-расшифровка игрового термина.
@@ -2129,7 +2135,13 @@ local TERM_QUESTIONS = {
     },
     {
         code = 'PG', label = 'ПГ', first = 'п', second = 'г',
-        forbidden = {'пауэргейм', 'пауэр гейм', 'пауер гейм', 'повергейм', 'повер гейм', 'powergaming', 'power gaming'},
+        forbidden = {
+            'пауэргейм', 'пауэр гейм', 'пауэргейминг', 'пауэр гейминг',
+            'пауергейм', 'пауер гейм', 'пауергейминг', 'пауер гейминг',
+            'павергейм', 'павер гейм', 'павергейминг', 'павер гейминг',
+            'повергейм', 'повер гейм', 'повергейминг', 'повер гейминг',
+            'powergaming', 'power gaming'
+        },
         testGood = 'Полевые госпитали',
         testBad = 'Пауэр гейминг',
     },
@@ -2195,13 +2207,13 @@ local function beginQuestion(stage)
     if stage == 'q1' then
         session.deadline = 0
         sendCandidateLine('Расскажите о себе.')
-        chatInfo('Ручной режим: таймера нет. Ждите полный ответ и нажмите 2, когда будете готовы продолжить.')
+        chatInfo('Ручной режим: таймера нет. Ждите полный ответ и нажмите ALT, когда будете готовы продолжить.')
     elseif stage == 'q2' then
         session.deadline = 0
         session.q2Term = pickTermQuestion(nil)
         session.q2FirstTermCode = session.q2Term.code
         sendCandidateLine('Что такое «' .. session.q2Term.label .. '»?')
-        chatInfo('Скрытая RP-проверка: термин ' .. session.q2Term.label .. '. Таймера нет; после полного ответа нажмите 2.')
+        chatInfo('Скрытая RP-проверка: термин ' .. session.q2Term.label .. '. Таймера нет; после полного ответа нажмите ALT.')
     elseif stage == 'q2_retry' then
         session.deadline = 0
         session.q2Term = pickTermQuestion(session.q2FirstTermCode)
@@ -2233,14 +2245,14 @@ local function beginQuestion(stage)
             session.stage = 'q2_retry'
             session.answers = {}
             session.deadline = 0
-            chatInfo('Задан повторный RP-термин: ' .. retryLabel .. '. Подсказка и вопрос отправлены одной строкой; таймера нет, после полного ответа нажмите 2.')
+            chatInfo('Задан повторный RP-термин: ' .. retryLabel .. '. Подсказка и вопрос отправлены одной строкой; таймера нет, после полного ответа нажмите ALT.')
         end)
 
         chatInfo('Первая проверка термина не пройдена. Подсказка и повторный Q2 отправляются кандидату одним сообщением.')
     elseif stage == 'q3' then
         session.deadline = 0
         sendCandidateLine('Что у меня над головой?')
-        chatInfo('Таймера нет. После полного ответа нажмите 2 для проверки.')
+        chatInfo('Таймера нет. После полного ответа нажмите ALT для проверки.')
     end
 end
 
@@ -2324,7 +2336,8 @@ local function validateAboveHead(answer)
 
     local forbidden = {
         cp('ник'), cp('никнейм'), cp('имя'), cp('айди'),
-        'nickname', 'name', 'id'
+        cp('хп'), cp('брон'), cp('армор'), cp('здоров'), cp('полос'),
+        'nickname', 'name', 'id', 'hp', 'health', 'armor', 'armour'
     }
     for _, word in ipairs(forbidden) do
         if lower:find(word, 1, true) then
@@ -3195,7 +3208,7 @@ local function manualAdvanceInterview()
         openRpQuestionMenu()
 
     elseif stage == 'rp_menu' then
-        -- 2 прямо в меню означает «RP-вопросов достаточно, перейти к терминам».
+        -- ALT прямо в меню означает «RP-вопросов достаточно, перейти к терминам».
         beginQuestion('q2')
 
     elseif stage == 'q2' or stage == 'q2_retry' then
@@ -3215,7 +3228,7 @@ local function manualAdvanceInterview()
         end
 
     else
-        chatInfo('2 используется на этапе собеседования после проверки документов.')
+        chatInfo('ALT используется на этапе собеседования после проверки документов.')
     end
 end
 
@@ -3260,7 +3273,7 @@ local function getInterviewHudLines()
     elseif stage == 'documents_licenses' then
         lines = {'RECRUIT', 'Лицензии проверены', 'Следующее: открыть медкарту'}
     elseif stage == 'q1' then
-        lines = {'СОБЕСЕДОВАНИЕ', 'Сейчас: рассказ о себе', '2: выбрать следующий RP-вопрос'}
+        lines = {'СОБЕСЕДОВАНИЕ', 'Сейчас: рассказ о себе', 'ALT: выбрать следующий RP-вопрос'}
     elseif stage == 'rp_menu' then
         lines = {'ВЫБОР RP-ВОПРОСА'}
         for i = 1, 5 do
@@ -3270,14 +3283,14 @@ local function getInterviewHudLines()
         lines[#lines + 1] = 'ALT: перейти к терминам'
     elseif stage == 'rp_custom' then
         local short = session.rpCurrent and session.rpCurrent.short or 'RP-вопрос'
-        lines = {'СОБЕСЕДОВАНИЕ', 'Сейчас: ' .. short, 'Таймера нет', '2: выбор следующего вопроса'}
+        lines = {'СОБЕСЕДОВАНИЕ', 'Сейчас: ' .. short, 'Таймера нет', 'ALT: выбор следующего вопроса'}
     elseif stage == 'q2' or stage == 'q2_retry' then
         local label = session.q2Term and session.q2Term.label or 'термин'
-        lines = {'ПРОВЕРКА ТЕРМИНА', 'Сейчас: «' .. label .. '»', 'Таймера нет', '2: проверить полный ответ'}
+        lines = {'ПРОВЕРКА ТЕРМИНА', 'Сейчас: «' .. label .. '»', 'Таймера нет', 'ALT: проверить полный ответ'}
     elseif stage == 'q2_retry_hint' then
         lines = {'ПРОВЕРКА ТЕРМИНА', 'Подсказка отправлена', 'Следующий термин через антифлуд-паузу'}
     elseif stage == 'q3' then
-        lines = {'ФИНАЛЬНЫЙ ВОПРОС', 'Что у меня над головой?', 'Таймера нет', '2: проверить полный ответ'}
+        lines = {'ФИНАЛЬНЫЙ ВОПРОС', 'Что у меня над головой?', 'Таймера нет', 'ALT: проверить полный ответ'}
     else
         return nil
     end
@@ -3317,7 +3330,7 @@ end
 -- NumPad намеренно не используется.
 local TOP_NUMBER_KEYS = {0x31, 0x32, 0x33, 0x34, 0x35}
 
-local KEY_2 = 0x32 -- верхний ряд цифр, не NumPad
+local KEY_ALT = vkeys.VK_MENU or 0x12 -- обычный ALT: ручной переход/проверка этапа
 local KEY_F = vkeys.VK_F or 0x46
 
 local function forceAcceptCurrentCandidate()
@@ -3344,11 +3357,8 @@ local function handleInterviewHotkeys()
         return
     end
 
-    if wasKeyPressed(KEY_2) then
-        manualAdvanceInterview()
-        return
-    end
-
+    -- В меню сначала обрабатываем цифры 1-5, чтобы клавиша 2 снова
+    -- нормально выбирала второй RP-вопрос. Переход дальше теперь только по ALT.
     if session.stage == 'rp_menu' then
         for i = 1, 5 do
             if wasKeyPressed(TOP_NUMBER_KEYS[i]) then
@@ -3356,6 +3366,11 @@ local function handleInterviewHotkeys()
                 return
             end
         end
+    end
+
+    if wasKeyPressed(KEY_ALT) then
+        manualAdvanceInterview()
+        return
     end
 end
 
@@ -3386,7 +3401,7 @@ local function processDeadline()
 
     elseif stage == 'q1' or stage == 'rp_custom' or stage == 'q2' or stage == 'q2_retry' or stage == 'q3' then
         -- v1.4.0: интервью полностью ручное. Даже принудительный дедлайн не двигает этап.
-        chatInfo('На этапе собеседования таймеры отключены. Используйте 2 для перехода/проверки ответа.')
+        chatInfo('На этапе собеседования таймеры отключены. Используйте ALT для перехода/проверки ответа.')
     end
 end
 
@@ -3561,7 +3576,7 @@ local function runTestCommand(arg)
         if ensureSelfTestSession() then handleTargetSpeech(cp('Да')) end
         return
     elseif action == 'yesvariants' then
-        local variants = {'Да', 'нДа', 'дда', 'даа', 'yes', 'ес', 'йес', 'ага', 'угу', 'конечно', 'готов', 'готоф', 'давай', 'yep', 'yeah', 'ok', 'так точно', 'так точнл генерал', 'так точно товарищ генерал', 'есть', 'согласен', 'соглсен', 'готов служить', 'готов к призыву', 'разумеется'}
+        local variants = {'Да', 'нДа', 'дда', 'даа', 'жа', 'дэ', 'йа', 'дас', 'yes', 'ес', 'йес', 'ага', 'угу', 'конечно', 'готов', 'готоф', 'давай', 'yep', 'yeah', 'ok', 'так точно', 'так точнл генерал', 'так точно товарищ генерал', 'есть', 'согласен', 'соглсен', 'готов служить', 'готов к призыву', 'разумеется'}
         chatInfo('[TEST] Проверяю варианты положительного ответа:')
         for _, value in ipairs(variants) do
             local encoded = cp(value)
@@ -4059,7 +4074,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v2.2.11 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v2.2.13 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -4116,7 +4131,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '2.2.11'
+    return '2.2.13'
 end
 
 local function updaterDownload(url, path, callback)
@@ -4178,6 +4193,169 @@ local function updaterDownload(url, path, callback)
         finished = true
         callback(false, 'не удалось запустить загрузку: ' .. tostring(err))
     end
+end
+
+
+local function fileSizeBytes(path)
+    local f = io.open(path, 'rb')
+    if not f then return nil end
+    local size = f:seek('end')
+    f:close()
+    return tonumber(size)
+end
+
+local function ensureDirectory(path)
+    path = tostring(path or '')
+    if path == '' then return false end
+
+    if type(doesDirectoryExist) == 'function' then
+        local okExists, exists = pcall(doesDirectoryExist, path)
+        if okExists and exists then
+            return true
+        end
+    end
+
+    if type(createDirectory) == 'function' then
+        pcall(createDirectory, path)
+        if type(doesDirectoryExist) == 'function' then
+            local okExists, exists = pcall(doesDirectoryExist, path)
+            if okExists and exists then
+                return true
+            end
+        end
+    end
+
+    -- Windows/MoonLoader fallback. md/mkdir создаёт и промежуточные каталоги.
+    local safePath = path:gsub('"', '')
+    pcall(os.execute, 'mkdir "' .. safePath .. '" >nul 2>nul')
+
+    if type(doesDirectoryExist) == 'function' then
+        local okExists, exists = pcall(doesDirectoryExist, path)
+        return okExists and exists == true
+    end
+
+    return true
+end
+
+local function installDownloadedAsset(tempPath, destinationPath)
+    local input = io.open(tempPath, 'rb')
+    if not input then
+        return false, 'не удалось открыть скачанный ресурс'
+    end
+
+    local data = input:read('*a')
+    input:close()
+
+    if type(data) ~= 'string' or #data < 64 then
+        return false, 'скачанный ресурс слишком маленький или пустой'
+    end
+
+    local folder = destinationPath:match('^(.*[\\/])')
+    if folder and folder ~= '' then
+        folder = folder:gsub('[\\/]$', '')
+        if not ensureDirectory(folder) then
+            return false, 'не удалось создать папку: ' .. tostring(folder)
+        end
+    end
+
+    local backupPath = destinationPath .. '.bak'
+    pcall(os.remove, backupPath)
+
+    if doesFileExist(destinationPath) then
+        pcall(os.rename, destinationPath, backupPath)
+    end
+
+    local output = io.open(destinationPath, 'wb')
+    if not output then
+        if doesFileExist(backupPath) then
+            pcall(os.rename, backupPath, destinationPath)
+        end
+        return false, 'не удалось записать ресурс: ' .. tostring(destinationPath)
+    end
+
+    output:write(data)
+    output:close()
+    pcall(os.remove, backupPath)
+
+    return true
+end
+
+local function syncUpdateAssets(base, forceDownload, callback)
+    local assets = CONFIG.updateAssets
+    if type(assets) ~= 'table' or #assets == 0 then
+        callback(true, nil, false)
+        return
+    end
+
+    local index = 1
+    local changed = false
+
+    local function nextAsset()
+        if index > #assets then
+            callback(true, nil, changed)
+            return
+        end
+
+        local asset = assets[index]
+        index = index + 1
+
+        if type(asset) ~= 'table'
+            or type(asset.url) ~= 'string' or asset.url == ''
+            or type(asset.relativePath) ~= 'string' or asset.relativePath == '' then
+            callback(false, 'некорректная запись ресурса автообновления', changed)
+            return
+        end
+
+        local destinationPath = base .. asset.relativePath
+        local existingSize = fileSizeBytes(destinationPath)
+
+        if not forceDownload and existingSize and existingSize >= 64 then
+            nextAsset()
+            return
+        end
+
+        local folder = destinationPath:match('^(.*[\\/])')
+        if folder and folder ~= '' then
+            folder = folder:gsub('[\\/]$', '')
+            if not ensureDirectory(folder) then
+                callback(false, 'не удалось создать папку для ' .. tostring(asset.name or asset.relativePath), changed)
+                return
+            end
+        end
+
+        local tempPath = destinationPath .. '.download.tmp'
+        updaterDownload(asset.url, tempPath, function(okDownload, downloadErr)
+            if not okDownload then
+                pcall(os.remove, tempPath)
+                callback(
+                    false,
+                    'не удалось скачать ' .. tostring(asset.name or asset.relativePath)
+                        .. ': ' .. tostring(downloadErr),
+                    changed
+                )
+                return
+            end
+
+            local installed, installErr = installDownloadedAsset(tempPath, destinationPath)
+            pcall(os.remove, tempPath)
+
+            if not installed then
+                callback(
+                    false,
+                    'не удалось установить ' .. tostring(asset.name or asset.relativePath)
+                        .. ': ' .. tostring(installErr),
+                    changed
+                )
+                return
+            end
+
+            changed = true
+            debugLog('Updater asset installed: ' .. tostring(asset.relativePath))
+            nextAsset()
+        end)
+    end
+
+    nextAsset()
 end
 
 local function installDownloadedScript(tempPath)
@@ -4280,12 +4458,25 @@ local function checkForUpdate(manual)
 
         local localVersion = currentScriptVersion()
         if compareVersionParts(localVersion, remoteVersion) >= 0 then
-            UPDATE_STATE.busy = false
             chatInfo('Установлена актуальная версия v' .. localVersion .. '.')
+
+            -- Даже на актуальной версии восстанавливаем отсутствующие звуки.
+            syncUpdateAssets(base, false, function(okAssets, assetErr, changedAssets)
+                UPDATE_STATE.busy = false
+
+                if not okAssets then
+                    chatInfo('Версия актуальна, но ресурсы не восстановлены: ' .. tostring(assetErr))
+                    return
+                end
+
+                if changedAssets then
+                    chatInfo('Отсутствующие файлы hit-warnings восстановлены.')
+                end
+            end)
             return
         end
 
-        chatInfo('Найдена новая версия v' .. remoteVersion .. '. Скачиваю...')
+        chatInfo('Найдена новая версия v' .. remoteVersion .. '. Скачиваю скрипт и звуки...')
 
         updaterDownload(CONFIG.updateScriptUrl, scriptTempPath, function(okScript, errScript)
             if not okScript then
@@ -4294,19 +4485,29 @@ local function checkForUpdate(manual)
                 return
             end
 
-            local installed, installErr = installDownloadedScript(scriptTempPath)
-            pcall(os.remove, scriptTempPath)
-            UPDATE_STATE.busy = false
+            -- При новой версии принудительно обновляем оба звука с GitHub.
+            syncUpdateAssets(base, true, function(okAssets, assetErr)
+                if not okAssets then
+                    pcall(os.remove, scriptTempPath)
+                    UPDATE_STATE.busy = false
+                    chatInfo('Обновление отменено: ' .. tostring(assetErr))
+                    return
+                end
 
-            if not installed then
-                chatInfo('Ошибка установки обновления: ' .. tostring(installErr))
-                return
-            end
+                local installed, installErr = installDownloadedScript(scriptTempPath)
+                pcall(os.remove, scriptTempPath)
+                UPDATE_STATE.busy = false
 
-            chatInfo('Обновление установлено. Перезагружаю Recruit Helper...')
-            debugLog('Updater installed remote version ' .. tostring(remoteVersion))
-            scheduleAction(1000, function()
-                thisScript():reload()
+                if not installed then
+                    chatInfo('Ошибка установки обновления: ' .. tostring(installErr))
+                    return
+                end
+
+                chatInfo('Обновление и файлы hit-warnings установлены. Перезагружаю Recruit Helper...')
+                debugLog('Updater installed remote version ' .. tostring(remoteVersion) .. ' with hit-warnings assets')
+                scheduleAction(1000, function()
+                    thisScript():reload()
+                end)
             end)
         end)
     end)
@@ -4361,7 +4562,7 @@ end
 
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 2.2.11 ==========')
+    chatInfo('========== Recruit Helper 2.2.13 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -4483,11 +4684,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 2.2.11 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 2.2.13 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Recruit Helper 2.2.11 загружен.')
+    chatInfo('Recruit Helper 2.2.13 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
