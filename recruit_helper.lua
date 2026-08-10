@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('3.6')
-script_description('Recruit Helper 3.6: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('4.0')
+script_description('Recruit Helper 4.0: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -2403,16 +2403,57 @@ local function validateTermAnswer(answer, term)
     return false
 end
 
+-- Ответы, которые НЕ должны засчитываться на вопрос «Что у меня над головой?».
+-- Таблица глобальная специально: не расходует лимит top-level local Lua 5.1/MoonLoader.
+RECRUIT_ABOVE_HEAD_FORBIDDEN = {
+    -- Базовые HUD-элементы.
+    cp('ник'), cp('никнейм'), cp('имя'), cp('айди'), cp('ид'),
+    cp('хп'), cp('брон'), cp('броня'), cp('армор'), cp('здоров'), cp('полос'),
+
+    -- Уровень / VIP.
+    cp('уровень'), cp('левел'), cp('вип'),
+    'level', 'vip', 'vip level', 'level vip',
+
+    -- Семья / семейный тег / семейный флаг.
+    cp('семья'), cp('семей'), cp('семейка'), cp('семейный тег'), cp('тег семьи'),
+    cp('семейный флаг'), cp('флаг семьи'), cp('флаг'),
+    'family', 'family tag', 'family flag',
+
+    -- ADD / ADD VIP.
+    cp('аддшка'), cp('адд'), cp('адд вип'), cp('аддвип'),
+    'add', 'add vip', 'addvip',
+
+    -- Safe Zone.
+    cp('сейфзона'), cp('сейф зона'), cp('сейф-зона'),
+    'safezone', 'safe zone', 'safe-zone',
+
+    -- Бодикамера / значки.
+    cp('бодикамера'), cp('бодикамер'), cp('значок бодикамеры'),
+    cp('значок'), cp('иконка'), cp('икон'),
+    'bodycam', 'body cam', 'bodycamera', 'icon',
+
+    -- Выключенный звук / голосовой чат.
+    cp('выключенный звук'), cp('звук выключен'), cp('без звука'), cp('звук'),
+    cp('голосовой чат'), cp('голосовой'),
+    'sound off', 'soundoff', 'mute', 'muted', 'voice chat', 'voice',
+
+    -- Выключенный микрофон / micro off.
+    cp('выключенный микрофон'), cp('микрофон выключен'), cp('микрофон'),
+    cp('микроофф'), cp('микро офф'), cp('микро-off'), cp('микро'),
+    'microoff', 'mic off', 'micoff', 'mute mic', 'muted mic',
+
+    -- AFK/пауза тоже являются интерфейсными индикаторами над игроком.
+    cp('афк'), cp('пауза'), 'afk', 'pause',
+
+    -- Английские базовые варианты.
+    'nickname', 'name', 'id', 'hp', 'health', 'armor', 'armour'
+}
+
 local function validateAboveHead(answer)
     local lower = ruLower(trim(answer))
     if lower == '' then return false end
 
-    local forbidden = {
-        cp('ник'), cp('никнейм'), cp('имя'), cp('айди'),
-        cp('хп'), cp('брон'), cp('армор'), cp('здоров'), cp('полос'),
-        'nickname', 'name', 'id', 'hp', 'health', 'armor', 'armour'
-    }
-    for _, word in ipairs(forbidden) do
+    for _, word in ipairs(RECRUIT_ABOVE_HEAD_FORBIDDEN) do
         if lower:find(word, 1, true) then
             return false
         end
@@ -2430,6 +2471,89 @@ local function validateAboveHead(answer)
     end
 
     return true
+end
+
+-- /rexceptions [head|yes|no|all]
+-- Показывает именно те варианты/правила, которыми пользуется собеседование.
+function showRecruitExceptions(arg)
+    local mode = ruLower(trim(arg or ''))
+    if mode == '' then
+        chatInfo('Исключения: /rexceptions head | yes | no | all')
+        chatInfo('head = «Что у меня над головой?», yes/no = варианты согласия/отказа. Алиас: /rvariants.')
+        return
+    end
+
+    local function printList(title, values)
+        chatInfo(title)
+        local line = ''
+        for _, value in ipairs(values) do
+            local item = tostring(value)
+            local candidate = line == '' and item or (line .. ', ' .. item)
+            -- Ограничиваем длину локальной строки чата, чтобы SA-MP её не обрезал.
+            if line ~= '' and #cp(candidate) > 105 then
+                chatInfo(line)
+                line = item
+            else
+                line = candidate
+            end
+        end
+        if line ~= '' then
+            chatInfo(line)
+        end
+    end
+
+    local showHead = mode == 'head' or mode == 'above' or mode == cp('голова')
+        or mode == cp('надголовой') or mode == cp('над головой') or mode == 'all'
+    local showYes = mode == 'yes' or mode == cp('да') or mode == 'all'
+    local showNo = mode == 'no' or mode == cp('нет') or mode == 'all'
+
+    if not showHead and not showYes and not showNo then
+        chatInfo('Неизвестная группа. Используйте: /rexceptions head | yes | no | all')
+        return
+    end
+
+    if showHead then
+        local values = {
+            'ник', 'никнейм', 'имя', 'айди', 'ид', 'id', 'nickname', 'name',
+            'хп', 'hp', 'health', 'здоровье', 'полоска здоровья',
+            'броня', 'брон', 'армор', 'armor', 'armour',
+            'уровень', 'левел', 'level', 'вип', 'vip', 'vip level', 'level vip',
+            'семья', 'семейка', 'семейный тег', 'тег семьи', 'family', 'family tag',
+            'семейный флаг', 'флаг семьи', 'флаг', 'family flag',
+            'аддшка', 'адд', 'адд вип', 'аддвип', 'add', 'add vip', 'addvip',
+            'сейфзона', 'сейф зона', 'сейф-зона', 'safezone', 'safe zone', 'safe-zone',
+            'бодикамера', 'бодикамеры', 'значок бодикамеры', 'bodycam', 'body cam', 'bodycamera',
+            'значок', 'иконка', 'icon',
+            'выключенный звук', 'звук выключен', 'без звука', 'звук',
+            'sound off', 'soundoff', 'mute', 'muted', 'голосовой чат', 'voice chat',
+            'выключенный микрофон', 'микрофон выключен', 'микрофон',
+            'микроофф', 'микро офф', 'microoff', 'mic off', 'micoff', 'mute mic', 'muted mic',
+            'афк', 'afk', 'пауза', 'pause'
+        }
+        printList('Не засчитывается на «Что у меня над головой?»: ', values)
+        chatInfo('Проверка идёт по части слова/фразы: например «семейный флаг» или «микроофф» сразу отклоняются.')
+        chatInfo('Также не засчитывается ваш собственный ник (Name_Surname и Name Surname).')
+    end
+
+    if showYes then
+        local values = {
+            'да', 'ага', 'угу', 'конечно', 'готов', 'готова', 'давай', 'погнали', 'точно', 'есть',
+            'согласен', 'согласна', 'разумеется', 'безусловно', 'верно', 'ес', 'йес', 'жа', 'дэ', 'йа', 'дас',
+            'yes', 'yeah', 'yep', 'ye', 'y', 'ok', 'okay', 'affirmative',
+            'так точно', 'готов служить', 'готова служить', 'готов к призыву', 'готова к призыву',
+            'согласен на призыв', 'согласна на призыв', 'на призыв',
+            'нда', 'дда', 'даа', 'ддаа', 'дп', 'даж', 'yess', 'yees', 'yse', 'ys'
+        }
+        printList('Варианты, которые засчитываются как «ДА»:', values)
+        chatInfo('Для длинных слов вроде «согласен/точно/готов» допускается одна опечатка.')
+    end
+
+    if showNo then
+        local values = {
+            'нет', 'не', 'неа', 'отказываюсь', 'не хочу', 'no', 'nope', 'nah'
+        }
+        printList('Варианты, которые блокируют «ДА» / считаются отказом:', values)
+    end
 end
 
 local function finishSuccess()
@@ -4174,7 +4298,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v3.6 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v4.0 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -4231,7 +4355,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '3.6'
+    return '4.0'
 end
 
 local function updaterDownload(url, path, callback)
@@ -4758,7 +4882,7 @@ end
 
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 3.6 ==========')
+    chatInfo('========== Recruit Helper 4.0 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -4779,6 +4903,8 @@ local function showRecruitHelp()
     chatInfo('/rstop')
     chatInfo('/rstatus')
     chatInfo('/rnick')
+    chatInfo('/rexceptions [head|yes|no|all]')
+    chatInfo('/rvariants [head|yes|no|all]')
     chatInfo('/roff')
     chatInfo('')
     chatInfo('Auto VOiS:')
@@ -4871,6 +4997,9 @@ end
         chatInfo('Лог диагностики: ' .. getDebugLogPath())
     end)
     sampRegisterChatCommand('rtest', runTestCommand)
+    sampRegisterChatCommand('rexceptions', showRecruitExceptions)
+    sampRegisterChatCommand('rexcl', showRecruitExceptions)
+    sampRegisterChatCommand('rvariants', showRecruitExceptions)
     sampRegisterChatCommand('rnick', function(arg)
         local nick = trim(arg or '')
         if nick == '' then
@@ -4880,11 +5009,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 3.6 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 4.0 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Recruit Helper 3.6 загружен.')
+    chatInfo('Recruit Helper 4.0 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
