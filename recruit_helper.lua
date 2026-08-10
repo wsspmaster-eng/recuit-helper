@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('2.2.17')
-script_description('Recruit Helper 2.2.17: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('3.0')
+script_description('Recruit Helper 3.0: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -61,6 +61,11 @@ local CONFIG = {
             url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit_warnings/warning.mp3',
             relativePath = 'moonloader\\hit-warnings\\warning.mp3',
         },
+        {
+            name = 'general.mp3',
+            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit_warnings/general.mp3',
+            relativePath = 'moonloader\\hit-warnings\\general.mp3',
+        },
     },
     updateCheckOnStart = true,    -- автоматическая проверка при входе
 
@@ -77,35 +82,6 @@ local CONFIG = {
 
 local PREFIX = '{84D7FF}[Recruit]{FFFFFF} '
 
-
--- v2.0.7: защита друга создателя от случайных ударов
-local CREATOR_WARN_COOLDOWN = 0
-
-local function playAnnoyingWarningSound()
-    -- тихий короткий неприятный звук через встроенный звук SA-MP
-    pcall(function()
-        sampPlaySound(1085, 0, 0)
-    end)
-end
-
-local function checkProtectedHit(playerId)
-    local now = os.clock() * 1000
-    if now - CREATOR_WARN_COOLDOWN < 1500 then
-        return
-    end
-
-    local nick = sampGetPlayerNickname(playerId)
-    if not nick then return end
-
-    if nick == 'Jensen_Ackles' then
-        CREATOR_WARN_COOLDOWN = now
-        sampAddChatMessage(
-            'НЕ БЕЙТЕ ДРУГА СОЗДАТЕЛЯ:goblin::goblin:!!',
-            0xFFCC44
-        )
-        playAnnoyingWarningSound()
-    end
-end
 
 local session = {
     active = false,
@@ -133,6 +109,95 @@ local session = {
 
 local function cp(text)
     return u8:decode(text)
+end
+
+
+-- Защита выбранных игроков от случайных ударов.
+-- Звуки лежат в GTA\\moonloader\\moonloader\\hit-warnings\\
+local CREATOR_WARN_COOLDOWN = 0
+local protectedHitAudio = nil
+
+local PROTECTED_HIT_TARGETS = {
+    Suleyman_Kanuni = { sound = 'warning.mp3' },
+    Bruce_Tayson = { sound = 'fart.mp3' },
+    Jensen_Ackles = {
+        sound = 'general.mp3',
+        message = 'Не бей крутого генерала, чмо!!',
+        color = 0xFFCC44,
+    },
+}
+
+local function protectedHitSoundPath(fileName)
+    local thisPath = thisScript() and thisScript().path or ''
+    local base = thisPath:match('^(.*[\\/])')
+
+    if not base or base == '' then
+        base = tostring(getWorkingDirectory() or '')
+        if base:sub(-1) ~= '\\' and base:sub(-1) ~= '/' then
+            base = base .. '\\'
+        end
+    end
+
+    return base .. 'moonloader\\hit-warnings\\' .. tostring(fileName or '')
+end
+
+local function playProtectedHitSound(fileName)
+    local path = protectedHitSoundPath(fileName)
+    if type(doesFileExist) == 'function' and not doesFileExist(path) then
+        return false
+    end
+    if type(loadAudioStream) ~= 'function' or type(setAudioStreamState) ~= 'function' then
+        return false
+    end
+
+    local ok = pcall(function()
+        if protectedHitAudio and type(releaseAudioStream) == 'function' then
+            pcall(releaseAudioStream, protectedHitAudio)
+            protectedHitAudio = nil
+        end
+
+        protectedHitAudio = loadAudioStream(path)
+        if not protectedHitAudio then
+            error('loadAudioStream failed')
+        end
+
+        if type(setAudioStreamVolume) == 'function' then
+            pcall(setAudioStreamVolume, protectedHitAudio, 1.0)
+        end
+        setAudioStreamState(protectedHitAudio, 1)
+    end)
+
+    return ok
+end
+
+local function checkProtectedHit(playerId)
+    playerId = tonumber(playerId)
+    if not playerId then return end
+
+    local now = os.clock() * 1000
+    if now - CREATOR_WARN_COOLDOWN < 1500 then
+        return
+    end
+
+    local nick = sampGetPlayerNickname(playerId)
+    if not nick then return end
+
+    local target = PROTECTED_HIT_TARGETS[nick]
+    if not target then return end
+
+    CREATOR_WARN_COOLDOWN = now
+
+    if target.message then
+        sampAddChatMessage(cp(target.message), target.color or 0xFFCC44)
+    end
+
+    -- Для каждого защищённого ника используется свой MP3.
+    -- Если MP3 по какой-то причине недоступен, оставляем короткий встроенный fallback.
+    if not playProtectedHitSound(target.sound) then
+        pcall(function()
+            sampPlaySound(1085, 0, 0)
+        end)
+    end
 end
 
 -- MoonLoader console на большинстве сборок ожидает CP1251.
@@ -3086,6 +3151,20 @@ local function appendInterviewAnswer(body)
     session.deadline = 0
 end
 
+-- NRP/OOC-реплики Arizona оформляет в двойные скобки:
+-- (( Nick_Name[id]: текст )) или (( текст )). Их нельзя учитывать как ответ на собеседовании.
+local function isNrpChatText(text)
+    text = trim(stripColors(tostring(text or '')))
+    if text == '' then return false end
+
+    -- Основной формат NRP-чата. Проверки начала достаточно: сервер всегда добавляет (( ... )).
+    if text:match('^%(%(') then
+        return true
+    end
+
+    return false
+end
+
 local function handleTargetSpeech(body)
     body = trim(body or '')
     if body == '' or not session.active then return end
@@ -3132,6 +3211,10 @@ end
 
 function sampev.onChatMessage(playerId, text)
     if session.active and tonumber(playerId) == tonumber(session.targetId) then
+        if isNrpChatText(text) then
+            debugLog('Ignored target NRP chat: ' .. tostring(text))
+            return
+        end
         handleTargetSpeech(text)
     end
 end
@@ -3141,6 +3224,15 @@ function sampev.onServerMessage(color, text)
 
     if not session.active then return end
     local clean = stripColors(text)
+
+    -- NRP/OOC-чат вида (( Nick_Name[id]: текст )) полностью игнорируем:
+    -- он не должен попадать в ответы Q1/RP/Q2/Q3 и не должен подтверждать согласие.
+    if isNrpChatText(clean) then
+        if messageIsFromTarget(clean) then
+            debugLog('Ignored target NRP server message: ' .. tostring(clean))
+        end
+        return
+    end
 
     -- Предложение документов.
     if session.stage == 'wait_offer' then
@@ -4074,7 +4166,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v2.2.17 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v3.0 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -4131,7 +4223,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '2.2.17'
+    return '3.0'
 end
 
 local function updaterDownload(url, path, callback)
@@ -4658,7 +4750,7 @@ end
 
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 2.2.17 ==========')
+    chatInfo('========== Recruit Helper 3.0 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -4780,11 +4872,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 2.2.17 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 3.0 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Recruit Helper 2.2.17 загружен.')
+    chatInfo('Recruit Helper 3.0 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
