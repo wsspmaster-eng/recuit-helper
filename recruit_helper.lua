@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('2.1.8')
-script_description('Recruit Helper 2.1.8: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('2.2.11')
+script_description('Recruit Helper 2.2.11: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -668,55 +668,6 @@ local function sendShowPassInstruction(attempt)
     return false
 end
 
-
-local function russianMinuteWord(value)
-    local n = math.abs(math.floor(tonumber(value) or 0))
-    local last100 = n % 100
-    local last10 = n % 10
-
-    if last100 >= 11 and last100 <= 14 then
-        return 'минут'
-    end
-    if last10 == 1 then
-        return 'минута'
-    end
-    if last10 >= 2 and last10 <= 4 then
-        return 'минуты'
-    end
-    return 'минут'
-end
-
-local function sendStroyAnnouncement(arg)
-    local minutes = tonumber(tostring(arg or ''):match('^%s*(%d+)%s*$'))
-
-    if not minutes then
-        chatInfo('Использование: /str [время в минутах]. Например: /str 5')
-        return
-    end
-
-    minutes = math.floor(minutes)
-    if minutes < 1 or minutes > 180 then
-        chatInfo('Время построения должно быть от 1 до 180 минут.')
-        return
-    end
-
-    local minuteWord = russianMinuteWord(minutes)
-    local line = '/r Построение на плацу! Явка обязательна для всего состава. Время на прибытие - '
-        .. tostring(minutes) .. ' ' .. minuteWord .. '.'
-
-    local encoded = line
-    local okEncode, converted = pcall(cp, line)
-    if okEncode and type(converted) == 'string' then
-        encoded = converted
-    end
-
-    if enqueueOutbound(encoded, 'command', false) then
-        chatInfo('Построение объявлено: ' .. tostring(minutes) .. ' ' .. minuteWord .. '.')
-        debugLog('Stroy announcement queued: ' .. tostring(minutes) .. ' ' .. minuteWord)
-    else
-        chatInfo('Не удалось поставить объявление о построении в очередь.')
-    end
-end
 
 local function sendGameCommand(command)
     if type(command) ~= 'string' or command == '' then return end
@@ -3823,6 +3774,236 @@ local function runTestCommand(arg)
     chatInfo('[TEST] Неизвестная команда. Используйте /rtest help.')
 end
 
+
+-- ============================================================================
+-- СТРОЙ: /str, /nostr, /strtest, /strskip, /strstatus
+-- Встроенная версия отдельного Stroy Timer 1.1.
+-- ============================================================================
+local STROY_TIMER = {
+    active = false,
+    testMode = false,
+    minutesLeft = 0,
+    nextTickAt = 0,
+}
+
+-- HUD статуса строя в правом нижнем углу.
+local stroyHudFont = nil
+local stroyHudFontFailed = false
+
+local function ensureStroyHudFont()
+    if stroyHudFont then return true end
+    if stroyHudFontFailed then return false end
+    if type(renderCreateFont) ~= 'function' then
+        stroyHudFontFailed = true
+        return false
+    end
+
+    local ok, font = pcall(renderCreateFont, 'Arial', 10, 5)
+    if ok and font then
+        stroyHudFont = font
+        return true
+    end
+
+    stroyHudFontFailed = true
+    debugLog('Stroy HUD font create failed: ' .. tostring(font))
+    return false
+end
+
+local function stroyChatInfo(text)
+    -- Конвертируем всю строку целиком, включая русский префикс.
+    sampAddChatMessage(cp('{84D7FF}[Строй]{FFFFFF} ' .. tostring(text or '')), -1)
+end
+
+local function stroyTestInfo(text)
+    sampAddChatMessage(cp('{F5B642}[STR TEST]{FFFFFF} ' .. tostring(text or '')), -1)
+end
+
+local function stroyMinuteWord(value)
+    local n = math.abs(math.floor(tonumber(value) or 0))
+    local last100 = n % 100
+    local last10 = n % 10
+
+    if last100 >= 11 and last100 <= 14 then
+        return 'минут'
+    elseif last10 == 1 then
+        return 'минута'
+    elseif last10 >= 2 and last10 <= 4 then
+        return 'минуты'
+    end
+
+    return 'минут'
+end
+
+local function stroyCountdownText(minutes)
+    return 'Строй для всех бойцов, всем на плац! Время на построение '
+        .. tostring(minutes) .. ' ' .. stroyMinuteWord(minutes) .. '.'
+end
+
+local function resetStroyTimer()
+    STROY_TIMER.active = false
+    STROY_TIMER.testMode = false
+    STROY_TIMER.minutesLeft = 0
+    STROY_TIMER.nextTickAt = 0
+end
+
+local function sendStroyTimerMessage()
+    if STROY_TIMER.minutesLeft <= 0 then
+        if STROY_TIMER.testMode then
+            stroyTestInfo('/r Время на построение окончено.')
+        else
+            sampSendChat(cp('/r Время на построение окончено.'))
+        end
+
+        resetStroyTimer()
+        return
+    end
+
+    local text = stroyCountdownText(STROY_TIMER.minutesLeft)
+
+    if STROY_TIMER.testMode then
+        -- Тест отображает локально точную строку, которая ушла бы в /r.
+        stroyTestInfo('/r ' .. text)
+    else
+        sampSendChat(cp('/r ' .. text))
+    end
+end
+
+local function parseStroyMinutes(arg)
+    local value = tonumber(tostring(arg or ''):match('^%s*(%d+)%s*$'))
+    if not value then return nil end
+
+    value = math.floor(value)
+    if value < 1 or value > 180 then return nil end
+    return value
+end
+
+local function startStroyTimer(arg, testMode)
+    local minutes = parseStroyMinutes(arg)
+
+    if not minutes then
+        if testMode then
+            stroyChatInfo('Использование: /strtest [минуты]. Допустимо: 1-180.')
+        else
+            stroyChatInfo('Использование: /str [минуты]. Допустимо: 1-180.')
+        end
+        return
+    end
+
+    resetStroyTimer()
+
+    STROY_TIMER.active = true
+    STROY_TIMER.testMode = testMode == true
+    STROY_TIMER.minutesLeft = minutes
+    STROY_TIMER.nextTickAt = nowMs() + 60000
+
+    sendStroyTimerMessage()
+
+    if STROY_TIMER.testMode then
+        stroyChatInfo('Тест запущен. /strskip — пропустить минуту, /nostr — отменить.')
+    else
+        stroyChatInfo('Таймер построения запущен на ' .. tostring(minutes) .. ' '
+            .. stroyMinuteWord(minutes) .. '.')
+    end
+end
+
+local function cancelStroyTimer()
+    if not STROY_TIMER.active then
+        stroyChatInfo('Активного построения нет.')
+        return
+    end
+
+    local wasTest = STROY_TIMER.testMode
+    resetStroyTimer()
+
+    if wasTest then
+        stroyChatInfo('Тест построения отменён.')
+    else
+        stroyChatInfo('Построение отменено.')
+    end
+end
+
+local function skipStroyTestMinute()
+    if not STROY_TIMER.active then
+        stroyChatInfo('Активного построения нет.')
+        return
+    end
+
+    if not STROY_TIMER.testMode then
+        stroyChatInfo('/strskip доступна только во время /strtest.')
+        return
+    end
+
+    STROY_TIMER.minutesLeft = STROY_TIMER.minutesLeft - 1
+    STROY_TIMER.nextTickAt = nowMs() + 60000
+    sendStroyTimerMessage()
+end
+
+local function showStroyStatus()
+    if not STROY_TIMER.active then
+        stroyChatInfo('Статус: построение не запущено.')
+        return
+    end
+
+    local leftMs = math.max(0, STROY_TIMER.nextTickAt - nowMs())
+    local seconds = math.ceil(leftMs / 1000)
+
+    stroyChatInfo(
+        'Статус: ' .. (STROY_TIMER.testMode and 'ТЕСТ' or 'РЕАЛЬНЫЙ СТРОЙ')
+        .. ', осталось по счётчику: ' .. tostring(STROY_TIMER.minutesLeft) .. ' '
+        .. stroyMinuteWord(STROY_TIMER.minutesLeft)
+        .. ', следующее сообщение через ~' .. tostring(seconds) .. ' сек.'
+    )
+end
+
+local function processStroyTimer()
+    if not STROY_TIMER.active or STROY_TIMER.nextTickAt <= 0 then return end
+
+    local now = nowMs()
+    if now >= STROY_TIMER.nextTickAt then
+        STROY_TIMER.minutesLeft = STROY_TIMER.minutesLeft - 1
+        -- Сдвигаемся от предыдущего дедлайна, чтобы не накапливать дрейф.
+        STROY_TIMER.nextTickAt = STROY_TIMER.nextTickAt + 60000
+        sendStroyTimerMessage()
+    end
+end
+
+local function drawStroyHud()
+    -- Панель показывается только пока реально активен /str или /strtest.
+    if not STROY_TIMER.active then return end
+    if not ensureStroyHudFont() then return end
+    if type(getScreenResolution) ~= 'function' or type(renderFontDrawText) ~= 'function' then return end
+
+    local ok, sx, sy = pcall(getScreenResolution)
+    if not ok or not sx or not sy then return end
+
+    local leftMs = math.max(0, STROY_TIMER.nextTickAt - nowMs())
+    local seconds = math.ceil(leftMs / 1000)
+    local mode = STROY_TIMER.testMode and 'ТЕСТ' or 'РЕАЛЬНЫЙ СТРОЙ'
+
+    local lines = {
+        'СТРОЙ • ' .. mode,
+        'Осталось: ' .. tostring(STROY_TIMER.minutesLeft) .. ' '
+            .. stroyMinuteWord(STROY_TIMER.minutesLeft)
+            .. ' | Следующее: ~' .. tostring(seconds) .. ' сек.',
+    }
+
+    -- Компактная панель занимает свободную область ниже Recruit HUD.
+    local width = 380
+    local lineHeight = 18
+    local height = 38
+    local x = sx - width - 22
+    local y = sy - height - 16
+
+    if type(renderDrawBox) == 'function' then
+        pcall(renderDrawBox, x - 10, y - 7, width + 16, height + 10, 0xA0000000)
+    end
+
+    for i, line in ipairs(lines) do
+        local color = (i == 1) and 0xFFF5B642 or 0xFFFFFFFF
+        pcall(renderFontDrawText, stroyHudFont, cp(line), x, y + (i - 1) * lineHeight, color)
+    end
+end
+
 function main()
     if not isSampLoaded() or not isSampfuncsLoaded() then return end
     while not isSampAvailable() do wait(100) end
@@ -3878,7 +4059,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v2.1.8 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v2.2.11 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -3935,7 +4116,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '2.1.8'
+    return '2.2.11'
 end
 
 local function updaterDownload(url, path, callback)
@@ -4134,7 +4315,6 @@ end
     sampRegisterChatCommand('rdiag', showDiagnostics)
     sampRegisterChatCommand('diag', showDiagnostics)
 
-    sampRegisterChatCommand('str', sendStroyAnnouncement)
     sampRegisterChatCommand('update', function()
         checkForUpdate(true)
     end)
@@ -4180,47 +4360,18 @@ end
 
 
 
--- ================== BUILD TIMER 2.1.8 ==================
-local buildTimerId = 0
-
-local function startBuildTimer(arg)
-    local minutes = tonumber(trim(arg))
-    if not minutes or minutes < 1 then
-        chatInfo('Использование: (удалено)')
-        return
-    end
-
-    buildTimerId = buildTimerId + 1
-    local myId = buildTimerId
-
-    chatInfo('Построение объявлено на плацу через ' .. minutes .. ' минут.')
-
-    for i = minutes - 1, 0, -1 do
-        scheduleAction((minutes - i) * 60000, function()
-            if myId ~= buildTimerId then return end
-
-            if i > 0 then
-                chatInfo('Построение через ' .. i .. ' минут.')
-            else
-                chatInfo('Построение началось. Кто не пришел на плац — получают выговоры.')
-            end
-        end)
-    end
-end
-
-local function cancelBuildTimer()
-    buildTimerId = buildTimerId + 1
-    chatInfo('Построение отменено.')
-end
-
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 2.1.8 ==========')
+    chatInfo('========== Recruit Helper 2.2.11 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
-    chatInfo('(удалено)')
-    chatInfo('/cl')
+    chatInfo('')
+    chatInfo('Строй:')
     chatInfo('/str [минуты]')
+    chatInfo('/nostr')
+    chatInfo('/strtest [минуты]')
+    chatInfo('/strskip')
+    chatInfo('/strstatus')
     chatInfo('/update')
     chatInfo('')
     chatInfo('Призыв:')
@@ -4264,8 +4415,15 @@ end
 
     sampRegisterChatCommand('near', startNearest)
     sampRegisterChatCommand('rrp', giveFractionRpInRadius)
-    sampRegisterChatCommand('removed_l', startBuildTimer)
-    sampRegisterChatCommand('cl', cancelBuildTimer)
+    sampRegisterChatCommand('str', function(arg)
+        startStroyTimer(arg, false)
+    end)
+    sampRegisterChatCommand('nostr', cancelStroyTimer)
+    sampRegisterChatCommand('strtest', function(arg)
+        startStroyTimer(arg, true)
+    end)
+    sampRegisterChatCommand('strskip', skipStroyTestMinute)
+    sampRegisterChatCommand('strstatus', showStroyStatus)
     sampRegisterChatCommand('rhelp', showRecruitHelp)
     sampRegisterChatCommand('recruit', function(arg)
         local id = tonumber(trim(arg))
@@ -4325,11 +4483,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 2.1.8 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 2.2.11 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Recruit Helper 2.1.8 загружен.')
+    chatInfo('Recruit Helper 2.2.11 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
@@ -4349,7 +4507,9 @@ end
         processAutoVois()
         processAutoBinder()
         processMaintenance()
+        processStroyTimer()
         drawInterviewHud()
+        drawStroyHud()
         handleInterviewHotkeys()
 
         if CONFIG.hotkeyAltN
