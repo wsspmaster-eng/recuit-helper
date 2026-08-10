@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('3.0')
-script_description('Recruit Helper 3.0: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('3.1')
+script_description('Recruit Helper 3.1: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -118,8 +118,16 @@ local CREATOR_WARN_COOLDOWN = 0
 local protectedHitAudio = nil
 
 local PROTECTED_HIT_TARGETS = {
-    Suleyman_Kanuni = { sound = 'warning.mp3' },
-    Bruce_Tayson = { sound = 'fart.mp3' },
+    Suleyman_Kanuni = {
+        sound = 'warning.mp3',
+        message = 'Не трогай меня сука!!',
+        color = 0xFF4444,
+    },
+    Bruce_Tayson = {
+        sound = 'fart.mp3',
+        message = 'НЕ ТРОГАЙ РУКАМИ! РУКИ ИСПАЧКАЕШЬ В КАКАШКАХ!!!!!',
+        color = 0xFF4444,
+    },
     Jensen_Ackles = {
         sound = 'general.mp3',
         message = 'Не бей крутого генерала, чмо!!',
@@ -4166,7 +4174,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v3.0 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v3.1 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -4223,7 +4231,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '3.0'
+    return '3.1'
 end
 
 local function updaterDownload(url, path, callback)
@@ -4750,7 +4758,7 @@ end
 
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 3.0 ==========')
+    chatInfo('========== Recruit Helper 3.1 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -4872,11 +4880,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 3.0 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 3.1 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Recruit Helper 3.0 загружен.')
+    chatInfo('Recruit Helper 3.1 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
