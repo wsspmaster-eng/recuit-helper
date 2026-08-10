@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('2.2.16')
-script_description('Recruit Helper 2.2.16: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('2.2.17')
+script_description('Recruit Helper 2.2.17: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -4074,7 +4074,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v2.2.16 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v2.2.17 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -4131,7 +4131,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '2.2.16'
+    return '2.2.17'
 end
 
 local function updaterDownload(url, path, callback)
@@ -4261,6 +4261,32 @@ local function fileSizeBytes(path)
     return tonumber(size)
 end
 
+-- Проверяем не просто размер: после старых версий апдейтера мог остаться
+-- HTML/текст вместо MP3. Настоящий MP3 обычно начинается с ID3 либо MPEG sync 0xFFEx.
+local function isValidMp3File(path)
+    local f = io.open(path, 'rb')
+    if not f then return false end
+
+    local head = f:read(3) or ''
+    local size = f:seek('end') or 0
+    f:close()
+
+    if tonumber(size) == nil or tonumber(size) < 64 then
+        return false
+    end
+
+    if head:sub(1, 3) == 'ID3' then
+        return true
+    end
+
+    local b1, b2 = head:byte(1, 2)
+    if b1 == 0xFF and b2 and b2 >= 0xE0 then
+        return true
+    end
+
+    return false
+end
+
 local function ensureDirectory(path)
     path = tostring(path or '')
     if path == '' then return false end
@@ -4305,6 +4331,14 @@ local function installDownloadedAsset(tempPath, destinationPath)
 
     if type(data) ~= 'string' or #data < 64 then
         return false, 'скачанный ресурс слишком маленький или пустой'
+    end
+
+    -- Не устанавливаем HTML/текст вместо MP3.
+    local h1, h2 = data:byte(1, 2)
+    local hasId3 = data:sub(1, 3) == 'ID3'
+    local hasMpegSync = h1 == 0xFF and h2 ~= nil and h2 >= 0xE0
+    if not hasId3 and not hasMpegSync then
+        return false, 'скачанный файл не похож на MP3'
     end
 
     local folder = destinationPath:match('^(.*[\\/])')
@@ -4375,9 +4409,9 @@ local function syncUpdateAssets(base, forceDownload, callback)
         end
 
         local destinationPath = base .. asset.relativePath
-        local existingSize = fileSizeBytes(destinationPath)
 
-        if not forceDownload and existingSize and existingSize >= 64 then
+        -- Пропускаем только настоящий MP3, а не любой файл >64 байт.
+        if not forceDownload and isValidMp3File(destinationPath) then
             nextAsset()
             return
         end
@@ -4624,7 +4658,7 @@ end
 
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 2.2.16 ==========')
+    chatInfo('========== Recruit Helper 2.2.17 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -4746,11 +4780,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 2.2.16 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 2.2.17 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Recruit Helper 2.2.16 загружен.')
+    chatInfo('Recruit Helper 2.2.17 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
