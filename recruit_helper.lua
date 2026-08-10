@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('2.2.13')
-script_description('Recruit Helper 2.2.13: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('2.2.14')
+script_description('Recruit Helper 2.2.14: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -53,12 +53,12 @@ local CONFIG = {
     updateAssets = {
         {
             name = 'fart.mp3',
-            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit-warnings/fart.mp3',
+            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/main/moonloader/hit_warnings/fart.mp3',
             relativePath = 'moonloader\\hit-warnings\\fart.mp3',
         },
         {
             name = 'warning.mp3',
-            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit-warnings/warning.mp3',
+            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/main/moonloader/hit_warnings/warning.mp3',
             relativePath = 'moonloader\\hit-warnings\\warning.mp3',
         },
     },
@@ -4074,7 +4074,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v2.2.13 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v2.2.14 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -4131,7 +4131,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '2.2.13'
+    return '2.2.14'
 end
 
 local function updaterDownload(url, path, callback)
@@ -4476,7 +4476,7 @@ local function checkForUpdate(manual)
             return
         end
 
-        chatInfo('Найдена новая версия v' .. remoteVersion .. '. Скачиваю скрипт и звуки...')
+        chatInfo('Найдена новая версия v' .. remoteVersion .. '. Скачиваю скрипт...')
 
         updaterDownload(CONFIG.updateScriptUrl, scriptTempPath, function(okScript, errScript)
             if not okScript then
@@ -4485,29 +4485,21 @@ local function checkForUpdate(manual)
                 return
             end
 
-            -- При новой версии принудительно обновляем оба звука с GitHub.
-            syncUpdateAssets(base, true, function(okAssets, assetErr)
-                if not okAssets then
-                    pcall(os.remove, scriptTempPath)
-                    UPDATE_STATE.busy = false
-                    chatInfo('Обновление отменено: ' .. tostring(assetErr))
-                    return
-                end
+            -- Сначала ставим новый Lua-файл, не блокируя обновление из-за ресурсов.
+            -- После reload новая версия сама проверит/докачает отсутствующие звуки.
+            local installed, installErr = installDownloadedScript(scriptTempPath)
+            pcall(os.remove, scriptTempPath)
+            UPDATE_STATE.busy = false
 
-                local installed, installErr = installDownloadedScript(scriptTempPath)
-                pcall(os.remove, scriptTempPath)
-                UPDATE_STATE.busy = false
+            if not installed then
+                chatInfo('Ошибка установки обновления: ' .. tostring(installErr))
+                return
+            end
 
-                if not installed then
-                    chatInfo('Ошибка установки обновления: ' .. tostring(installErr))
-                    return
-                end
-
-                chatInfo('Обновление и файлы hit-warnings установлены. Перезагружаю Recruit Helper...')
-                debugLog('Updater installed remote version ' .. tostring(remoteVersion) .. ' with hit-warnings assets')
-                scheduleAction(1000, function()
-                    thisScript():reload()
-                end)
+            chatInfo('Скрипт обновлён. После перезагрузки проверю файлы hit-warnings...')
+            debugLog('Updater installed remote version ' .. tostring(remoteVersion) .. '; assets will sync after reload')
+            scheduleAction(1000, function()
+                thisScript():reload()
             end)
         end)
     end)
@@ -4562,7 +4554,7 @@ end
 
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 2.2.13 ==========')
+    chatInfo('========== Recruit Helper 2.2.14 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -4684,11 +4676,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 2.2.13 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 2.2.14 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Recruit Helper 2.2.13 загружен.')
+    chatInfo('Recruit Helper 2.2.14 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
