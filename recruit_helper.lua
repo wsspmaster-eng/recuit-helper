@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('3.1')
-script_description('Recruit Helper 3.1: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('3.3')
+script_description('Recruit Helper 3.3: призыв + Auto VOiS, AFK auto-close, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -44,6 +44,11 @@ local CONFIG = {
     interviewHud = true,          -- мини-панель справа снизу
     interviewHudFontSize = 10,
     manualInterview = true,       -- с «Расскажите о себе» никаких авто-таймеров
+
+    -- AFK-защита: при непрерывном AFK 9 минут 30 секунд закрыть игру.
+    afkAutoCloseEnabled = true,
+    afkAutoCloseSeconds = 570,
+    afkTrayNotifyEnabled = true,     -- раз в минуту показывать Windows-уведомление о времени AFK
 
     -- Обновление Recruit Helper.
     -- Нужен внешний HTTP/HTTPS адрес. Пока URL пустые, /update честно сообщит,
@@ -362,6 +367,331 @@ local function nowMs()
         end
     end
     return os.time() * 1000
+end
+
+local AFK_CLOSE_STATE = {
+    startedAt = nil,
+    testSeconds = nil,
+    closing = false,
+    lastTrayMinute = 0,
+}
+
+-- Windows tray balloon: уведомление появляется в области уведомлений/центре уведомлений.
+-- Используется только WinAPI, дополнительных библиотек игроку не требуется.
+local formatAfkTime
+
+local AFK_TRAY = {
+    available = false,
+    added = false,
+    ffi = nil,
+    shell32 = nil,
+    user32 = nil,
+    kernel32 = nil,
+    hwnd = nil,
+    nid = nil,
+}
+
+do
+    local okFfi, ffi = pcall(require, 'ffi')
+    if okFfi and ffi then
+        local okCdef = pcall(function()
+            ffi.cdef[[
+                typedef void* RH_HWND;
+                typedef void* RH_HICON;
+                typedef unsigned long RH_DWORD;
+                typedef unsigned int RH_UINT;
+                typedef int RH_BOOL;
+                typedef long RH_LPARAM;
+
+                typedef struct {
+                    RH_DWORD cbSize;
+                    RH_HWND hWnd;
+                    RH_UINT uID;
+                    RH_UINT uFlags;
+                    RH_UINT uCallbackMessage;
+                    RH_HICON hIcon;
+                    char szTip[128];
+                    RH_DWORD dwState;
+                    RH_DWORD dwStateMask;
+                    char szInfo[256];
+                    RH_UINT uTimeoutOrVersion;
+                    char szInfoTitle[64];
+                    RH_DWORD dwInfoFlags;
+                } RH_NOTIFYICONDATAA;
+
+                RH_BOOL Shell_NotifyIconA(RH_DWORD dwMessage, RH_NOTIFYICONDATAA* lpData);
+                RH_HICON LoadIconA(void* hInstance, const char* lpIconName);
+                RH_BOOL EnumWindows(RH_BOOL (__stdcall *lpEnumFunc)(RH_HWND, RH_LPARAM), RH_LPARAM lParam);
+                RH_DWORD GetWindowThreadProcessId(RH_HWND hWnd, RH_DWORD* lpdwProcessId);
+                RH_BOOL IsWindowVisible(RH_HWND hWnd);
+                RH_DWORD GetCurrentProcessId(void);
+            ]]
+        end)
+
+        if okCdef then
+            local okShell, shell32 = pcall(ffi.load, 'shell32')
+            local okUser, user32 = pcall(ffi.load, 'user32')
+            local okKernel, kernel32 = pcall(ffi.load, 'kernel32')
+
+            if okShell and okUser and okKernel then
+                AFK_TRAY.available = true
+                AFK_TRAY.ffi = ffi
+                AFK_TRAY.shell32 = shell32
+                AFK_TRAY.user32 = user32
+                AFK_TRAY.kernel32 = kernel32
+            end
+        end
+    end
+end
+
+local function findOwnGameWindow()
+    if not AFK_TRAY.available then return nil end
+    if AFK_TRAY.hwnd ~= nil then return AFK_TRAY.hwnd end
+
+    local ffi = AFK_TRAY.ffi
+    local user32 = AFK_TRAY.user32
+    local kernel32 = AFK_TRAY.kernel32
+    local currentPid = tonumber(kernel32.GetCurrentProcessId())
+    local found = ffi.new('RH_HWND[1]')
+
+    local callback
+    callback = ffi.cast('RH_BOOL (__stdcall *)(RH_HWND, RH_LPARAM)', function(hwnd, lParam)
+        local pid = ffi.new('RH_DWORD[1]')
+        user32.GetWindowThreadProcessId(hwnd, pid)
+        if tonumber(pid[0]) == currentPid and user32.IsWindowVisible(hwnd) ~= 0 then
+            found[0] = hwnd
+            return 0
+        end
+        return 1
+    end)
+
+    pcall(function() user32.EnumWindows(callback, 0) end)
+    pcall(function() callback:free() end)
+
+    if found[0] ~= nil then
+        AFK_TRAY.hwnd = found[0]
+    end
+    return AFK_TRAY.hwnd
+end
+
+local function trayCopyText(buffer, capacity, text)
+    if not AFK_TRAY.available then return end
+    local ffi = AFK_TRAY.ffi
+    local value = tostring(cp(tostring(text or '')))
+    local maxLen = math.max(0, capacity - 1)
+    if #value > maxLen then value = value:sub(1, maxLen) end
+    ffi.fill(buffer, capacity, 0)
+    if #value > 0 then ffi.copy(buffer, value, #value) end
+end
+
+local function removeAfkTrayIcon()
+    if not AFK_TRAY.available or not AFK_TRAY.added or AFK_TRAY.nid == nil then return end
+    pcall(function() AFK_TRAY.shell32.Shell_NotifyIconA(2, AFK_TRAY.nid) end) -- NIM_DELETE
+    AFK_TRAY.added = false
+    AFK_TRAY.nid = nil
+end
+
+local function showAfkTrayNotification(elapsed, limit)
+    if CONFIG.afkTrayNotifyEnabled ~= true or not AFK_TRAY.available then return false end
+
+    local hwnd = findOwnGameWindow()
+    if hwnd == nil then return false end
+
+    local ffi = AFK_TRAY.ffi
+    local nid = AFK_TRAY.nid
+    if nid == nil then
+        nid = ffi.new('RH_NOTIFYICONDATAA')
+        nid.cbSize = ffi.sizeof(nid)
+        nid.hWnd = hwnd
+        nid.uID = 0x524833 -- RH3
+        nid.hIcon = AFK_TRAY.user32.LoadIconA(nil, ffi.cast('const char*', 32516)) -- IDI_INFORMATION
+        AFK_TRAY.nid = nid
+    end
+
+    nid.uFlags = 0x00000002 + 0x00000004 + 0x00000010 -- NIF_ICON | NIF_TIP | NIF_INFO
+    nid.dwInfoFlags = 0x00000001 -- NIIF_INFO
+    nid.uTimeoutOrVersion = 10000
+
+    trayCopyText(nid.szTip, 128, 'Recruit Helper — AFK')
+    trayCopyText(nid.szInfoTitle, 64, 'Recruit Helper — AFK')
+    trayCopyText(
+        nid.szInfo,
+        256,
+        'Вы AFK уже ' .. formatAfkTime(elapsed)
+            .. '. Игра закроется на ' .. formatAfkTime(limit) .. '.'
+    )
+
+    local command = AFK_TRAY.added and 1 or 0 -- NIM_MODIFY / NIM_ADD
+    local ok, result = pcall(function()
+        return AFK_TRAY.shell32.Shell_NotifyIconA(command, nid)
+    end)
+
+    if ok and result ~= 0 then
+        AFK_TRAY.added = true
+        return true
+    end
+
+    return false
+end
+
+local function afkWallSeconds()
+    return os.time()
+end
+
+local function afkLimitSeconds()
+    local seconds = tonumber(AFK_CLOSE_STATE.testSeconds)
+        or tonumber(CONFIG.afkAutoCloseSeconds)
+        or 570
+    seconds = math.floor(seconds)
+    if seconds < 1 then seconds = 1 end
+    return seconds
+end
+
+formatAfkTime = function(seconds)
+    seconds = math.max(0, math.floor(tonumber(seconds) or 0))
+    local minutes = math.floor(seconds / 60)
+    local rest = seconds % 60
+    if minutes > 0 then
+        return string.format('%d:%02d', minutes, rest)
+    end
+    return tostring(rest) .. ' сек.'
+end
+
+local function isRecruitAfk()
+    local paused = false
+    if type(isGamePaused) == 'function' then
+        local okPaused, value = pcall(isGamePaused)
+        paused = okPaused and value == true
+    end
+
+    local background = false
+    if type(isGameWindowForeground) == 'function' then
+        local okForeground, foreground = pcall(isGameWindowForeground)
+        background = okForeground and foreground == false
+    end
+
+    return paused or background
+end
+
+local function closeGameForAfk(elapsed, limit)
+    if AFK_CLOSE_STATE.closing then return end
+    AFK_CLOSE_STATE.closing = true
+    removeAfkTrayIcon()
+
+    debugLog(
+        'AFK auto-close: elapsed=' .. tostring(elapsed)
+        .. ' sec, limit=' .. tostring(limit) .. ' sec'
+    )
+
+    -- Пользователь просит именно закрыть игру, а не только отключиться от сервера.
+    -- os.exit завершает текущий процесс GTA/MoonLoader. taskkill оставлен fallback-ом.
+    if os and type(os.exit) == 'function' then
+        os.exit(0)
+        return
+    end
+
+    if os and type(os.execute) == 'function' then
+        pcall(os.execute, 'taskkill /F /IM gta_sa.exe >nul 2>nul')
+    end
+end
+
+local function processAfkAutoClose()
+    if CONFIG.afkAutoCloseEnabled ~= true or AFK_CLOSE_STATE.closing then
+        return
+    end
+
+    if not isRecruitAfk() then
+        if AFK_CLOSE_STATE.startedAt ~= nil then
+            removeAfkTrayIcon()
+        end
+        AFK_CLOSE_STATE.startedAt = nil
+        AFK_CLOSE_STATE.lastTrayMinute = 0
+        return
+    end
+
+    local now = afkWallSeconds()
+    if not AFK_CLOSE_STATE.startedAt then
+        AFK_CLOSE_STATE.startedAt = now
+        AFK_CLOSE_STATE.lastTrayMinute = 0
+        debugLog('AFK timer started. Limit=' .. tostring(afkLimitSeconds()) .. ' sec')
+        return
+    end
+
+    local elapsed = math.max(0, os.difftime(now, AFK_CLOSE_STATE.startedAt))
+    local limit = afkLimitSeconds()
+
+    -- Каждую полную минуту непрерывного AFK показываем Windows tray-уведомление.
+    local wholeMinutes = math.floor(elapsed / 60)
+    if wholeMinutes >= 1 and wholeMinutes > (AFK_CLOSE_STATE.lastTrayMinute or 0) then
+        AFK_CLOSE_STATE.lastTrayMinute = wholeMinutes
+        showAfkTrayNotification(elapsed, limit)
+    end
+
+    if elapsed >= limit then
+        closeGameForAfk(elapsed, limit)
+    end
+end
+
+local function setAfkTestCommand(arg)
+    local raw = trim(arg or '')
+    local lowered = raw:lower()
+
+    if lowered == 'off' or lowered == 'reset' or lowered == 'default' then
+        AFK_CLOSE_STATE.testSeconds = nil
+        AFK_CLOSE_STATE.startedAt = nil
+        AFK_CLOSE_STATE.closing = false
+        AFK_CLOSE_STATE.lastTrayMinute = 0
+        removeAfkTrayIcon()
+        chatInfo('AFK-тест выключен. Обычный лимит: 9:30.')
+        return
+    end
+
+    if raw == '' then
+        raw = '30'
+    end
+
+    local numberText, suffix = raw:match('^(%d+%.?%d*)%s*([sSmM]?)$')
+    local value = tonumber(numberText)
+    if not value then
+        chatInfo('Использование: /afktest [секунды 1-600]. Пример: /afktest 30. /afktest off — вернуть 9:30.')
+        return
+    end
+
+    suffix = (suffix or ''):lower()
+    local seconds = value
+    if suffix == 'm' then
+        seconds = value * 60
+    end
+
+    seconds = math.floor(seconds + 0.5)
+    if seconds < 1 or seconds > 600 then
+        chatInfo('AFK-тест: укажите от 1 до 600 секунд (максимум 10 минут).')
+        return
+    end
+
+    AFK_CLOSE_STATE.testSeconds = seconds
+    AFK_CLOSE_STATE.startedAt = nil
+    AFK_CLOSE_STATE.closing = false
+    AFK_CLOSE_STATE.lastTrayMinute = 0
+    removeAfkTrayIcon()
+    chatInfo('AFK-тест включён: игра закроется после ' .. formatAfkTime(seconds) .. ' непрерывного AFK.')
+    chatInfo('/afktest off — вернуть обычные 9:30.')
+end
+
+local function showAfkCloseStatus()
+    local limit = afkLimitSeconds()
+    local mode = AFK_CLOSE_STATE.testSeconds and 'тест' or 'обычный'
+    local status = isRecruitAfk() and 'AFK' or 'активен'
+    local elapsed = 0
+    if AFK_CLOSE_STATE.startedAt then
+        elapsed = math.max(0, os.difftime(afkWallSeconds(), AFK_CLOSE_STATE.startedAt))
+    end
+    chatInfo(
+        'AFK auto-close: ' .. mode
+        .. ', статус=' .. status
+        .. ', прошло=' .. formatAfkTime(elapsed)
+        .. ', лимит=' .. formatAfkTime(limit) .. '.'
+    )
 end
 
 local function scheduleAction(delayMs, fn)
@@ -4174,7 +4504,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v3.1 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v3.3 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -4231,7 +4561,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '3.1'
+    return '3.3'
 end
 
 local function updaterDownload(url, path, callback)
@@ -4716,6 +5046,17 @@ end
         checkForUpdate(true)
     end)
 
+    sampRegisterChatCommand('afktest', setAfkTestCommand)
+    sampRegisterChatCommand('afkstatus', showAfkCloseStatus)
+    sampRegisterChatCommand('afktraytest', function()
+        local ok = showAfkTrayNotification(60, afkLimitSeconds())
+        if ok then
+            chatInfo('Тестовое AFK-уведомление отправлено в трей Windows.')
+        else
+            chatInfo('Не удалось показать tray-уведомление в этой сборке Windows/MoonLoader.')
+        end
+    end)
+
     -- Автобиндер.
     -- /autobinder оставлен как быстрый toggle.
     sampRegisterChatCommand('autobinder', toggleAutoBinder)
@@ -4758,7 +5099,7 @@ end
 
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 3.1 ==========')
+    chatInfo('========== Recruit Helper 3.3 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -4770,6 +5111,13 @@ local function showRecruitHelp()
     chatInfo('/strskip')
     chatInfo('/strstatus')
     chatInfo('/update')
+    chatInfo('')
+    chatInfo('AFK auto-close:')
+    chatInfo('/afktest [секунды 1-600]')
+    chatInfo('/afktest off')
+    chatInfo('/afkstatus')
+    chatInfo('/afktraytest')
+    chatInfo('При AFK каждую полную минуту Windows показывает уведомление в трее.')
     chatInfo('')
     chatInfo('Призыв:')
     chatInfo('/recruit')
@@ -4880,11 +5228,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 3.1 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 3.3 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Recruit Helper 3.1 загружен.')
+    chatInfo('Recruit Helper 3.3 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
@@ -4904,6 +5252,7 @@ end
         processAutoVois()
         processAutoBinder()
         processMaintenance()
+        processAfkAutoClose()
         processStroyTimer()
         drawInterviewHud()
         drawStroyHud()
