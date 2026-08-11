@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('5.0')
-script_description('Recruit Helper 5.0: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('5.1')
+script_description('Recruit Helper 5.1: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -56,17 +56,17 @@ local CONFIG = {
         {
             name = 'fart.mp3',
             url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit_warnings/fart.mp3',
-            relativePath = 'moonloader\\hit-warnings\\fart.mp3',
+            relativePath = 'hit-warnings\\fart.mp3',
         },
         {
             name = 'warning.mp3',
             url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit_warnings/warning.mp3',
-            relativePath = 'moonloader\\hit-warnings\\warning.mp3',
+            relativePath = 'hit-warnings\\warning.mp3',
         },
         {
             name = 'general.mp3',
             url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit_warnings/general.mp3',
-            relativePath = 'moonloader\\hit-warnings\\general.mp3',
+            relativePath = 'hit-warnings\\general.mp3',
         },
     },
     updateCheckOnStart = true,    -- автоматическая проверка при входе
@@ -83,6 +83,8 @@ local CONFIG = {
 }
 
 local PREFIX = '{84D7FF}[Recruit]{FFFFFF} '
+
+local updateInProgress = false
 
 
 local session = {
@@ -148,7 +150,7 @@ local function protectedHitSoundPath(fileName)
         end
     end
 
-    return base .. 'moonloader\\hit-warnings\\' .. tostring(fileName or '')
+    return base .. 'hit-warnings\\' .. tostring(fileName or '')
 end
 
 local function playProtectedHitSound(fileName)
@@ -4300,7 +4302,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v5.0 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v5.1 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -4533,7 +4535,7 @@ local function downloadBattlePassScript()
         return
     end
 
-    local moonloaderDir = getWorkingDirectory() .. '\\moonloader'
+    local moonloaderDir = getWorkingDirectory()
     local finalPath = moonloaderDir .. '\\battlepass.lua'
     local tempPath = moonloaderDir .. '\\battlepass.lua.download'
 
@@ -5018,7 +5020,7 @@ end
 
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 5.0 ==========')
+    chatInfo('========== Recruit Helper 5.1 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -5145,11 +5147,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 5.0 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 5.1 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Recruit Helper 5.0 загружен.')
+    chatInfo('Recruit Helper 5.1 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
