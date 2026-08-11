@@ -50,6 +50,8 @@ local CONFIG = {
     -- что сервер обновлений не настроен.
     updateManifestUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/version.txt',        -- пример: https://site.example/recruit-helper/version.txt
     updateScriptUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/recruit_helper.lua',          -- пример: https://site.example/recruit-helper/recruit_helper.lua
+    battlePassScriptUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/battlepass.lua',
+    battlePassAutoLoad = true,
     updateAssets = {
         {
             name = 'fart.mp3',
@@ -4477,6 +4479,23 @@ local function updaterDownload(url, path, callback)
     end
 end
 
+local function downloadBattlePassScript()
+    if not CONFIG.battlePassAutoLoad or not CONFIG.battlePassScriptUrl then
+        return
+    end
+
+    local path = getWorkingDirectory() .. '\\moonloader\\battlepass.lua'
+
+    updaterDownload(CONFIG.battlePassScriptUrl, path, function(ok, err)
+        if ok then
+            debugLog('BattlePass.lua downloaded: ' .. tostring(path))
+            chatInfo('BattlePass.lua обновлён.')
+        else
+            debugLog('BattlePass.lua download failed: ' .. tostring(err))
+        end
+    end)
+end
+
 local function fileSizeBytes(path)
     local f = io.open(path, 'rb')
     if not f then return nil end
@@ -5020,6 +5039,7 @@ end
     if CONFIG.updateCheckOnStart then
         scheduleAction(3000, function()
             checkForUpdate(false)
+            downloadBattlePassScript()
         end)
     end
 
