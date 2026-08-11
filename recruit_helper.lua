@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('4.1')
-script_description('Recruit Helper 4.1: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('5.0')
+script_description('Recruit Helper 5.0: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -4300,7 +4300,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v4.1 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v5.0 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -4479,19 +4479,136 @@ local function updaterDownload(url, path, callback)
     end
 end
 
+local function isValidLuaScriptFile(path)
+    local f = io.open(path, 'rb')
+    if not f then return false, 'файл не найден' end
+
+    local data = f:read('*a') or ''
+    f:close()
+
+    if #data < 32 then
+        return false, 'файл слишком маленький (' .. tostring(#data) .. ' байт)'
+    end
+
+    local lower = data:sub(1, 512):lower()
+    if lower:find('<!doctype html', 1, true)
+        or lower:find('<html', 1, true)
+        or lower:find('404: not found', 1, true) then
+        return false, 'вместо Lua получен HTML/ошибка GitHub'
+    end
+
+    local loader = loadstring or load
+    if type(loader) == 'function' then
+        local chunk, syntaxErr = loader(data, '@battlepass.lua')
+        if not chunk then
+            return false, 'ошибка синтаксиса: ' .. tostring(syntaxErr)
+        end
+    end
+
+    return true, #data
+end
+
+local function startBattlePassScript(path)
+    local ok, result = pcall(function()
+        if type(script) == 'table' and type(script.load) == 'function' then
+            return script.load(path)
+        end
+
+        if type(loadScript) == 'function' then
+            return loadScript(path)
+        end
+
+        error('в этой сборке MoonLoader нет script.load/loadScript')
+    end)
+
+    if not ok then
+        return false, tostring(result)
+    end
+
+    return true, result
+end
+
 local function downloadBattlePassScript()
     if not CONFIG.battlePassAutoLoad or not CONFIG.battlePassScriptUrl then
         return
     end
 
-    local path = getWorkingDirectory() .. '\\moonloader\\battlepass.lua'
+    local moonloaderDir = getWorkingDirectory() .. '\\moonloader'
+    local finalPath = moonloaderDir .. '\\battlepass.lua'
+    local tempPath = moonloaderDir .. '\\battlepass.lua.download'
 
-    updaterDownload(CONFIG.battlePassScriptUrl, path, function(ok, err)
-        if ok then
-            debugLog('BattlePass.lua downloaded: ' .. tostring(path))
-            chatInfo('BattlePass.lua обновлён.')
+    if type(doesDirectoryExist) == 'function' and type(createDirectory) == 'function' then
+        local okDir, exists = pcall(doesDirectoryExist, moonloaderDir)
+        if not okDir or not exists then
+            pcall(createDirectory, moonloaderDir)
+        end
+    end
+
+    pcall(os.remove, tempPath)
+
+    debugLog('BattlePass: download start -> ' .. tostring(finalPath))
+
+    updaterDownload(CONFIG.battlePassScriptUrl, tempPath, function(ok, err)
+        if not ok then
+            debugLog('BattlePass download failed: ' .. tostring(err))
+            chatInfo('BattlePass: ошибка загрузки. См. recruit_assistant_debug.log')
+            pcall(os.remove, tempPath)
+            return
+        end
+
+        local valid, info = isValidLuaScriptFile(tempPath)
+        if not valid then
+            debugLog('BattlePass validation failed: ' .. tostring(info))
+            chatInfo('BattlePass: скачанный файл повреждён: ' .. tostring(info))
+            pcall(os.remove, tempPath)
+            return
+        end
+
+        -- Сначала сохраняем старую копию, затем атомарно заменяем файл.
+        local backupPath = finalPath .. '.bak'
+        pcall(os.remove, backupPath)
+        local oldExists = false
+        local oldFile = io.open(finalPath, 'rb')
+        if oldFile then
+            oldExists = true
+            oldFile:close()
+            pcall(os.rename, finalPath, backupPath)
+        end
+
+        local renamed, renameErr = os.rename(tempPath, finalPath)
+        if not renamed then
+            if oldExists then
+                pcall(os.rename, backupPath, finalPath)
+            end
+            debugLog('BattlePass replace failed: ' .. tostring(renameErr))
+            chatInfo('BattlePass: не удалось установить файл в moonloader.')
+            return
+        end
+
+        local finalValid, finalInfo = isValidLuaScriptFile(finalPath)
+        if not finalValid then
+            pcall(os.remove, finalPath)
+            if oldExists then
+                pcall(os.rename, backupPath, finalPath)
+            end
+            debugLog('BattlePass final validation failed: ' .. tostring(finalInfo))
+            chatInfo('BattlePass: проверка установленного файла не пройдена.')
+            return
+        end
+
+        pcall(os.remove, backupPath)
+        debugLog('BattlePass installed: ' .. tostring(finalPath) .. ', bytes=' .. tostring(finalInfo))
+
+        -- Если battlepass.lua раньше не существовал, MoonLoader ещё не мог его загрузить.
+        -- Загружаем его сразу. Если файл уже был, новый экземпляр тоже запускаем: это
+        -- позволяет применить обновление без полного перезапуска игры.
+        local started, startErr = startBattlePassScript(finalPath)
+        if started then
+            chatInfo('BattlePass.lua установлен и загружен в MoonLoader.')
+            debugLog('BattlePass script.load OK: ' .. tostring(finalPath))
         else
-            debugLog('BattlePass.lua download failed: ' .. tostring(err))
+            debugLog('BattlePass script.load failed: ' .. tostring(startErr))
+            chatInfo('BattlePass.lua установлен, но автозапуск не удался: ' .. tostring(startErr))
         end
     end)
 end
@@ -4901,7 +5018,7 @@ end
 
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 4.1 ==========')
+    chatInfo('========== Recruit Helper 5.0 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -5028,11 +5145,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 4.1 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 5.0 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Recruit Helper 4.1 загружен.')
+    chatInfo('Recruit Helper 5.0 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
