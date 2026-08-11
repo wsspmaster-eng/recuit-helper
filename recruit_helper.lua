@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('5.1')
-script_description('Recruit Helper 5.1: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('5.1.1')
+script_description('Recruit Helper 5.1.1: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -4302,7 +4302,7 @@ function main()
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
 
         local message =
-            'v5.1 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
+            'v5.1.1.1 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A')
             .. ' | Queue: ' .. tostring(outboundCount)
             .. ' | Tasks: ' .. tostring(scheduledCount)
             .. ' | Recruit: ' .. recruitStage
@@ -4359,7 +4359,7 @@ local function compareVersionParts(a, b)
 end
 
 local function currentScriptVersion()
-    return '4.1'
+    return '5.1.1'
 end
 
 local function updaterDownload(url, path, callback)
@@ -4962,11 +4962,8 @@ local function checkForUpdate(manual)
                 return
             end
 
-            chatInfo('Скрипт обновлён. После перезагрузки проверю файлы hit-warnings...')
-            debugLog('Updater installed remote version ' .. tostring(remoteVersion) .. '; assets will sync after reload')
-            scheduleAction(1000, function()
-                thisScript():reload()
-            end)
+            chatInfo('Скрипт обновлён. Перезапустите MoonLoader для применения.')
+            debugLog('Updater installed remote version ' .. tostring(remoteVersion) .. '; reload disabled to prevent update loop')
         end)
     end)
 end
@@ -5020,7 +5017,7 @@ end
 
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 5.1 ==========')
+    chatInfo('========== Recruit Helper 5.1.1 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -5147,11 +5144,11 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 5.1 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 5.1.1 loaded. Safe CEF mode enabled; FFI packet scan removed.')
 
     initAutoBinderSchedule(true)
 
-    chatInfo('Recruit Helper 5.1 загружен.')
+    chatInfo('Recruit Helper 5.1.1 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
