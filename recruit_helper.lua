@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('5.2')
-script_description('Recruit Helper 5.2: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('5.3')
+script_description('Recruit Helper 5.3: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -1429,7 +1429,7 @@ local function startRecruitment(id, options)
 
     sendCandidateLines({
         'Здравия желаю, Вы на призыв?',
-        'Ответьте да/нет.'
+        '/b Ответьте да/нет.'
     })
     chatInfo(string.format('%sКандидат: %s[%d]. Ожидаю положительный ответ.', session.testMode and '[TEST] ' or '', session.targetName, id))
 end
@@ -2649,7 +2649,7 @@ local function repeatCurrentStagePrompt()
     if stage == 'wait_consent' then
         sendCandidateLines({
             'Здравия желаю, Вы на призыв?',
-            'Ответьте да/нет.'
+            '/b Ответьте да/нет.'
         })
         chatInfo('Повторен вопрос о призыве.')
     elseif stage == 'wait_offer' then
@@ -3164,7 +3164,7 @@ function main()
         end
         local outboundCount = type(outboundQueue) == 'table' and #outboundQueue or -1
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
-        local message = 'v5.2 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
+        local message = 'v5.3 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
         local okChat, chatErr = pcall(function() chatInfo(message) end)
         consolePrint('[Recruit DIAG] ' .. message)
         debugLog('DIAG: ' .. message)
@@ -3193,7 +3193,7 @@ local function compareVersionParts(a, b)
     return 0
 end
 
-local function currentScriptVersion() return '5.2' end
+local function currentScriptVersion() return '5.3' end
 
 local function updaterDownload(url, path, callback)
     local callbackDone = false
@@ -3606,7 +3606,7 @@ end
     end)
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 5.2 ==========')
+    chatInfo('========== Recruit Helper 5.3 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -3705,9 +3705,9 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 5.2 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 5.3 loaded. Safe CEF mode enabled; FFI packet scan removed.')
     initAutoBinderSchedule(true)
-    chatInfo('Recruit Helper 5.2 загружен.')
+    chatInfo('Recruit Helper 5.3 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
