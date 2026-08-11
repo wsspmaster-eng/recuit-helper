@@ -64,7 +64,7 @@ local silent_phase = 0
 
 function requestBPDataSilently()
     if silent_update_active then
-        sampAddChatMessage("{FF6347}[BP Helper] {FFFFFF}Обновление уже идет", -1)
+        sampAddChatMessage("{FF6347}[BP Helper] {FFFFFF}ГЋГЎГ­Г®ГўГ«ГҐГ­ГЁГҐ ГіГ¦ГҐ ГЁГ¤ГҐГІ", -1)
         return
     end
     
@@ -239,7 +239,7 @@ local function drawQuestCard(quest, is_active)
     local draw_list = imgui.GetWindowDrawList()
     local availWidth = imgui.GetContentRegionAvail().x
     
-    -- Выделяем место под кнопки только если зажат Alt (или активно меню)
+    -- Г‚Г»Г¤ГҐГ«ГїГҐГ¬ Г¬ГҐГ±ГІГ® ГЇГ®Г¤ ГЄГ­Г®ГЇГЄГЁ ГІГ®Г«ГјГЄГ® ГҐГ±Г«ГЁ Г§Г Г¦Г ГІ Alt (ГЁГ«ГЁ Г ГЄГІГЁГўГ­Г® Г¬ГҐГ­Гѕ)
     local buttonsAreaWidth = is_active and 60 or 0 
     local textWidth = availWidth - buttonsAreaWidth
     
@@ -254,14 +254,14 @@ local function drawQuestCard(quest, is_active)
     local p = imgui.GetCursorScreenPos()
 
     imgui.BeginGroup()
-        -- Текст выводится ВСЕГДА
+        -- Г’ГҐГЄГ±ГІ ГўГ»ГўГ®Г¤ГЁГІГ±Гї Г‚Г‘Г…ГѓГ„ГЂ
         imgui.PushStyleColor(imgui.Col.Text, text_color)
         imgui.PushTextWrapPos(imgui.GetCursorPosX() + textWidth)
         imgui.Text(displayText)
         imgui.PopTextWrapPos()
         imgui.PopStyleColor()
         
-        -- Прогресс-бар выводится ВСЕГДА (если он есть у задания)
+        -- ГЏГ°Г®ГЈГ°ГҐГ±Г±-ГЎГ Г° ГўГ»ГўГ®Г¤ГЁГІГ±Гї Г‚Г‘Г…ГѓГ„ГЂ (ГҐГ±Г«ГЁ Г®Г­ ГҐГ±ГІГј Гі Г§Г Г¤Г Г­ГЁГї)
         if quest.max > 1 and quest_progress > 0 then
             imgui.PushStyleColor(imgui.Col.PlotHistogram, imgui.ImVec4(0.26, 0.59, 0.98, 0.8))
             imgui.ProgressBar(quest_progress, imgui.ImVec2(textWidth - 10, 3), "")
@@ -271,7 +271,7 @@ local function drawQuestCard(quest, is_active)
         local textHeight = imgui.GetItemRectSize().y
         local finalHeight = math.max(textHeight, is_active and 28 or 0)
 
-        -- Кнопки рисуются ТОЛЬКО в активном режиме
+        -- ГЉГ­Г®ГЇГЄГЁ Г°ГЁГ±ГіГѕГІГ±Гї Г’ГЋГ‹ГњГЉГЋ Гў Г ГЄГІГЁГўГ­Г®Г¬ Г°ГҐГ¦ГЁГ¬ГҐ
         if is_active then
             imgui.SetCursorPos(imgui.ImVec2(imgui.GetWindowContentRegionMax().x - buttonsAreaWidth, startPos.y))
             
@@ -297,13 +297,13 @@ local function drawQuestCard(quest, is_active)
             imgui.PopStyleColor()
         end
 
-        -- Вертикальная цветная линия-маркер слева
+        -- Г‚ГҐГ°ГІГЁГЄГ Г«ГјГ­Г Гї Г¶ГўГҐГІГ­Г Гї Г«ГЁГ­ГЁГї-Г¬Г Г°ГЄГҐГ° Г±Г«ГҐГўГ 
         local col_u32 = imgui.ColorConvertFloat4ToU32(accent_color)
-        -- Динамически рассчитываем высоту линии в зависимости от наличия кнопок и прогресс-бара
+        -- Г„ГЁГ­Г Г¬ГЁГ·ГҐГ±ГЄГЁ Г°Г Г±Г±Г·ГЁГІГ»ГўГ ГҐГ¬ ГўГ»Г±Г®ГІГі Г«ГЁГ­ГЁГЁ Гў Г§Г ГўГЁГ±ГЁГ¬Г®Г±ГІГЁ Г®ГІ Г­Г Г«ГЁГ·ГЁГї ГЄГ­Г®ГЇГ®ГЄ ГЁ ГЇГ°Г®ГЈГ°ГҐГ±Г±-ГЎГ Г°Г 
         local line_height = is_active and math.max(textHeight, 28) or (textHeight + (quest_progress > 0 and 6 or 0))
         draw_list:AddRectFilled(imgui.ImVec2(p.x - 5, p.y), imgui.ImVec2(p.x - 2, p.y + line_height), col_u32)
         
-        -- Выравниваем отступы
+        -- Г‚Г»Г°Г ГўГ­ГЁГўГ ГҐГ¬ Г®ГІГ±ГІГіГЇГ»
         if is_active and textHeight < 28 then imgui.SetCursorPosY(startPos.y + 28) end
     imgui.EndGroup()
     
@@ -314,7 +314,7 @@ end
 
 function main()
     while not isSampAvailable() do wait(100) end
-    sampAddChatMessage("{32CD32}[BP Helper] {FFFFFF}Загружен. Команда: /bph", -1)
+    sampAddChatMessage("{32CD32}[BP Helper] {FFFFFF}Г‡Г ГЈГ°ГіГ¦ГҐГ­. ГЉГ®Г¬Г Г­Г¤Г : /bph", -1)
 
     getBattlepassContent('battlepass_mission_default')
     getBattlepassContent('battlepass_mission_premium')
@@ -365,15 +365,15 @@ imgui.OnFrame(function() return win_state[0] end, function(player)
         if show_interface then saved_size = imgui.GetWindowSize() end
         
         if show_interface then
-            if imgui.Button(getIcon('eye-slash') .. u8" Скрытые задания", imgui.ImVec2(-1, 25)) then hidden_window[0] = true end
-            if imgui.Button(getIcon('rotate') .. u8" Обновить", imgui.ImVec2(-1, 25)) then requestBPDataSilently() end
-            if imgui.Button(getIcon('gear') .. u8" Настройки", imgui.ImVec2(-1, 25)) then settings_window[0] = true end
+            if imgui.Button(getIcon('eye-slash') .. u8" Г‘ГЄГ°Г»ГІГ»ГҐ Г§Г Г¤Г Г­ГЁГї", imgui.ImVec2(-1, 25)) then hidden_window[0] = true end
+            if imgui.Button(getIcon('rotate') .. u8" ГЋГЎГ­Г®ГўГЁГІГј", imgui.ImVec2(-1, 25)) then requestBPDataSilently() end
+            if imgui.Button(getIcon('gear') .. u8" ГЌГ Г±ГІГ°Г®Г©ГЄГЁ", imgui.ImVec2(-1, 25)) then settings_window[0] = true end
             imgui.Spacing()
         end
         
         imgui.BeginChild("QuestsList", imgui.ImVec2(0, 0), true)
             if #cached_list == 0 then
-                imgui.TextWrapped(u8"Нет активных заданий. Выполните старые или откройте меню BP.")
+                imgui.TextWrapped(u8"ГЌГҐГІ Г ГЄГІГЁГўГ­Г»Гµ Г§Г Г¤Г Г­ГЁГ©. Г‚Г»ГЇГ®Г«Г­ГЁГІГҐ Г±ГІГ Г°Г»ГҐ ГЁГ«ГЁ Г®ГІГЄГ°Г®Г©ГІГҐ Г¬ГҐГ­Гѕ BP.")
             else
                 for i, quest in ipairs(cached_list) do
                     imgui.PushIDInt(i)
@@ -394,11 +394,11 @@ imgui.OnFrame(function() return settings_window[0] end, function(player)
     
     local flags = imgui.WindowFlags.NoCollapse + imgui.WindowFlags.AlwaysAutoResize + imgui.WindowFlags.NoTitleBar
     if imgui.Begin(u8'BP_Settings_Window', settings_window, flags) then
-        imgui.Text(getIcon('gear') .. u8' BP Helper - Настройки')
+        imgui.Text(getIcon('gear') .. u8' BP Helper - ГЌГ Г±ГІГ°Г®Г©ГЄГЁ')
         imgui.Separator()
         imgui.Spacing()
         
-        imgui.Text(u8"Клавиша для курсора:")
+        imgui.Text(u8"ГЉГ«Г ГўГЁГёГ  Г¤Г«Гї ГЄГіГ°Г±Г®Г°Г :")
         imgui.SameLine()
         
         local key_name = vkeys.id_to_name(settings.cursor_key[0]) or "Unknown"
@@ -408,7 +408,7 @@ imgui.OnFrame(function() return settings_window[0] end, function(player)
             settings.waiting_for_key[0] = true
         end
         
-        if imgui.Checkbox(u8"Прозрачный фон в пассивном режиме", settings.enable_transparency) then
+        if imgui.Checkbox(u8"ГЏГ°Г®Г§Г°Г Г·Г­Г»Г© ГґГ®Г­ Гў ГЇГ Г±Г±ГЁГўГ­Г®Г¬ Г°ГҐГ¦ГЁГ¬ГҐ", settings.enable_transparency) then
             saveConfig()
         end
         
@@ -416,7 +416,7 @@ imgui.OnFrame(function() return settings_window[0] end, function(player)
         imgui.Separator()
         imgui.Spacing()
         
-        if imgui.Button(u8"Закрыть", imgui.ImVec2(-1, 30)) then
+        if imgui.Button(u8"Г‡Г ГЄГ°Г»ГІГј", imgui.ImVec2(-1, 30)) then
             settings_window[0] = false
             settings.waiting_for_key[0] = false
         end
@@ -430,7 +430,7 @@ imgui.OnFrame(function() return settings_window[0] end, function(player)
                 settings.cursor_key[0] = i
                 settings.waiting_for_key[0] = false
                 saveConfig()
-                sampAddChatMessage("{32CD32}[BP Helper] {FFFFFF}Клавиша курсора успешно изменена!", -1)
+                sampAddChatMessage("{32CD32}[BP Helper] {FFFFFF}ГЉГ«Г ГўГЁГёГ  ГЄГіГ°Г±Г®Г°Г  ГіГ±ГЇГҐГёГ­Г® ГЁГ§Г¬ГҐГ­ГҐГ­Г !", -1)
                 break
             end
         end
@@ -440,12 +440,12 @@ end)
 imgui.OnFrame(function() return hidden_window[0] end, function(player)
     player.HideCursor = false
     imgui.SetNextWindowSize(imgui.ImVec2(500, 400), imgui.Cond.FirstUseEver)
-    if imgui.Begin(u8'Скрытые задания', hidden_window) then
+    if imgui.Begin(u8'Г‘ГЄГ°Г»ГІГ»ГҐ Г§Г Г¤Г Г­ГЁГї', hidden_window) then
         for _, quest in ipairs(quests) do
             if not quest.show[0] then
                 imgui.Text(quest.text)
                 imgui.SameLine(imgui.GetWindowWidth() - 100)
-                if imgui.Button(u8"Вернуть##"..quest.id) then
+                if imgui.Button(u8"Г‚ГҐГ°Г­ГіГІГј##"..quest.id) then
                     quest.show[0] = true
                     saveConfig()
                     bUpdateCache = true
@@ -460,7 +460,7 @@ end)
 function sampev.onServerMessage(color, text)
     local clean_text = text:gsub("{%x%x%x%x%x%x}", "")
     
-    if clean_text:find("%[Боевой Пропуск%] Вы успешно выполнили задание") then
+    if clean_text:find("%[ГЃГ®ГҐГўГ®Г© ГЏГ°Г®ГЇГіГ±ГЄ%] Г‚Г» ГіГ±ГЇГҐГёГ­Г® ГўГ»ГЇГ®Г«Г­ГЁГ«ГЁ Г§Г Г¤Г Г­ГЁГҐ") then
         local result = clean_text:match("'(.-)'")
         if result then
             result = u8(result)
