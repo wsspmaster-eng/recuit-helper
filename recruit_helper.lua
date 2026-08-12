@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('5.3')
-script_description('Recruit Helper 5.3: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('5.4')
+script_description('Recruit Helper 5.4: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -49,7 +49,7 @@ local CONFIG = {
     updateManifestUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/version.txt',
     updateScriptUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/recruit_helper.lua',
     battlePassScriptUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/battlepass.lua',
-    battlePassAutoLoad = true,
+    battlePassAutoLoad = false,
     updateAssets = {
         {
             name = 'fart.mp3',
@@ -3164,7 +3164,7 @@ function main()
         end
         local outboundCount = type(outboundQueue) == 'table' and #outboundQueue or -1
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
-        local message = 'v5.3 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
+        local message = 'v5.4 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
         local okChat, chatErr = pcall(function() chatInfo(message) end)
         consolePrint('[Recruit DIAG] ' .. message)
         debugLog('DIAG: ' .. message)
@@ -3193,7 +3193,7 @@ local function compareVersionParts(a, b)
     return 0
 end
 
-local function currentScriptVersion() return '5.3' end
+local function currentScriptVersion() return '5.4' end
 
 local function updaterDownload(url, path, callback)
     local callbackDone = false
@@ -3606,7 +3606,7 @@ end
     end)
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 5.3 ==========')
+    chatInfo('========== Recruit Helper 5.4 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -3705,9 +3705,9 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 5.3 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 5.4 loaded. Safe CEF mode enabled; FFI packet scan removed.')
     initAutoBinderSchedule(true)
-    chatInfo('Recruit Helper 5.3 загружен.')
+    chatInfo('Recruit Helper 5.4 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
