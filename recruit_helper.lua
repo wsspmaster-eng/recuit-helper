@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('5.4')
-script_description('Recruit Helper 5.4: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('5.5')
+script_description('Recruit Helper 5.5: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -44,6 +44,7 @@ local CONFIG = {
     interviewHud = true,          -- мини-панель справа снизу
     interviewHudFontSize = 10,
     manualInterview = true,       -- с «Расскажите о себе» никаких авто-таймеров
+    manualProfessionalCheck = false, -- ручной режим проверки профессиональной пригодности (вы проверяете ответ, не скрипт)
 
     -- Обновление Recruit Helper.
     updateManifestUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/version.txt',
@@ -115,6 +116,7 @@ end
 -- Защита выбранных игроков от случайных ударов.
 local CREATOR_WARN_COOLDOWN = 0
 local protectedHitAudio = nil
+local klaksonDisabled = false
 
 local PROTECTED_HIT_TARGETS = {
     Suleyman_Kanuni = {
@@ -182,6 +184,10 @@ local function checkProtectedHit(playerId)
     if not playerId then return end
 
     local now = os.clock() * 1000
+    if type(getGameTimer) == 'function' then
+        local okTimer, gameTimer = pcall(getGameTimer)
+        if okTimer and type(gameTimer) == 'number' then now = gameTimer end
+    end
     if now - CREATOR_WARN_COOLDOWN < 1500 then
         return
     end
@@ -192,7 +198,17 @@ local function checkProtectedHit(playerId)
     local target = PROTECTED_HIT_TARGETS[nick]
     if not target then return end
 
+    -- Фиксируем кулдаун даже когда звук Jensen_Ackles выключен,
+    -- чтобы сообщение не спамилось при каждом пакете урона.
     CREATOR_WARN_COOLDOWN = now
+
+    if nick == 'Jensen_Ackles' and klaksonDisabled then
+        -- /klakson отключает только звук; текстовое предупреждение остаётся.
+        if target.message then
+            sampAddChatMessage(cp(target.message), target.color or 0xFFCC44)
+        end
+        return
+    end
 
     if target.message then
         sampAddChatMessage(cp(target.message), target.color or 0xFFCC44)
@@ -1313,15 +1329,18 @@ local function startRpNicknameCheck(nickname, attachToSession)
     if attachToSession then session.nickCheck = check end
 
     if valid then
-        chatInfo('RP-ник: формат ' .. nickname .. ' выглядит корректно (Name_Surname).')
+        chatInfo('RP-ник: формат ' .. nickname .. ' корректен. Проверяю, RP он или НРП...')
     else
-        chatInfo('RP-ник: формат ' .. nickname .. ' сомнительный — ' .. tostring(reason) .. '.')
+        chatInfo('RP-ник: ник точно НРП — ' .. tostring(reason) .. '.')
         return check
     end
 
-    if not CONFIG.checkRpNicknameOnline then return check end
+    if not CONFIG.checkRpNicknameOnline then
+        chatInfo('RP-ник: точную онлайн-проверку RP/НРП выполнить нельзя — она отключена в настройках.')
+        return check
+    end
     if not dlstatus or type(downloadUrlToFile) ~= 'function' then
-        chatInfo('RP-ник: онлайн-проверка Namespedia недоступна в этой сборке MoonLoader.')
+        chatInfo('RP-ник: не удалось точно определить RP/НРП — онлайн-проверка Namespedia недоступна.')
         return check
     end
 
@@ -1345,17 +1364,16 @@ local function startRpNicknameCheck(nickname, attachToSession)
 
         local firstPct = results.first and results.first.firstPct or nil
         local surnamePct = results.last and results.last.surnamePct or nil
-        local firstText = firstPct ~= nil and string.format('%d%% как имя', firstPct) or 'нет данных'
-        local lastText = surnamePct ~= nil and string.format('%d%% как фамилия', surnamePct) or 'нет данных'
 
-        chatInfo(string.format('Namespedia: %s — %s; %s — %s.', first, firstText, last, lastText))
+        -- Проценты Namespedia намеренно не показываем: пользователю нужен только итог RP/НРП.
         if firstPct == nil or surnamePct == nil then
-            chatInfo('RP-ник: Namespedia не дала полный ответ; оставляю решение за вами.')
+            chatInfo('RP-ник: не удалось точно определить RP/НРП — Namespedia не дала полный ответ.')
         elseif firstPct <= 0 or surnamePct <= 0 then
-            chatInfo('RP-ник: онлайн-проверка пометила ник как сомнительный. Это подсказка, а не автоматический отказ.')
             check.onlineSuspicious = true
+            chatInfo('RP-ник: ник точно НРП.')
         else
-            chatInfo('RP-ник: имя и фамилия найдены в базе Namespedia.')
+            check.onlineSuspicious = false
+            chatInfo('RP-ник: ник точно RP.')
         end
     end
 
@@ -1744,7 +1762,7 @@ local function openRpQuestionMenu()
     session.answers = {}
     session.deadline = 0
     session.rpCurrent = nil
-    chatInfo('Выберите RP-вопрос цифрами 1-5 в верхнем ряду клавиатуры. ALT в меню — перейти к проверке терминов.')
+    chatInfo('Выберите RP-вопрос клавишами 1-5 в верхнем ряду клавиатуры. ALT в меню — перейти к проверке терминов.')
 end
 
 local function askRpMenuQuestion(index)
@@ -1812,7 +1830,11 @@ local function beginQuestion(stage)
         session.q2Term = pickTermQuestion(nil)
         session.q2FirstTermCode = session.q2Term.code
         sendCandidateLine('Что такое «' .. session.q2Term.label .. '»?')
-        chatInfo('Скрытая RP-проверка: термин ' .. session.q2Term.label .. '. Таймера нет; после полного ответа нажмите ALT.')
+        if CONFIG.manualProfessionalCheck then
+            chatInfo('Ручная проверка проф.пригодности: термин ' .. session.q2Term.label .. '. Скрипт ответ не оценивает; после вашей проверки нажмите ALT, чтобы принять ответ.')
+        else
+            chatInfo('Скрытая RP-проверка: термин ' .. session.q2Term.label .. '. Таймера нет; после полного ответа нажмите ALT.')
+        end
     elseif stage == 'q2_retry' then
         session.deadline = 0
         session.q2Term = pickTermQuestion(session.q2FirstTermCode)
@@ -2534,6 +2556,13 @@ local function processCurrentTermAnswer()
         chatInfo('Кандидат ещё не дал ответ на термин. Жду ответ; таймера нет.')
         return
     end
+    if CONFIG.manualProfessionalCheck then
+        -- В ручном режиме сам факт нажатия ALT означает, что проверяющий
+        -- прочитал ответ и считает его подходящим. Автопроверка текста не запускается.
+        chatInfo('Ручной режим: ответ подтверждён вами. Автопроверка отключена; перехожу к финальному вопросу.')
+        beginQuestion('q3')
+        return
+    end
     if validateTermAnswer(answer, session.q2Term) then beginQuestion('q3')
     elseif session.stage == 'q2' then
         session.q2Retry = true
@@ -2602,7 +2631,8 @@ local function getInterviewHudLines()
         lines = {'СОБЕСЕДОВАНИЕ', 'Сейчас: ' .. short, 'Таймера нет', 'ALT: выбор следующего вопроса'}
     elseif stage == 'q2' or stage == 'q2_retry' then
         local label = session.q2Term and session.q2Term.label or 'термин'
-        lines = {'ПРОВЕРКА ТЕРМИНА', 'Сейчас: «' .. label .. '»', 'Таймера нет', 'ALT: проверить полный ответ'}
+        local action = CONFIG.manualProfessionalCheck and 'ALT: принять ответ вручную' or 'ALT: проверить полный ответ'
+        lines = {'ПРОВЕРКА ТЕРМИНА', 'Сейчас: «' .. label .. '»', 'Таймера нет', action}
     elseif stage == 'q2_retry_hint' then lines = {'ПРОВЕРКА ТЕРМИНА', 'Подсказка отправлена', 'Следующий термин через антифлуд-паузу'}
     elseif stage == 'q3' then lines = {'ФИНАЛЬНЫЙ ВОПРОС', 'Что у меня над головой?', 'Таймера нет', 'ALT: проверить полный ответ'}
     else return nil end
@@ -3164,7 +3194,7 @@ function main()
         end
         local outboundCount = type(outboundQueue) == 'table' and #outboundQueue or -1
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
-        local message = 'v5.4 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
+        local message = 'v5.5 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
         local okChat, chatErr = pcall(function() chatInfo(message) end)
         consolePrint('[Recruit DIAG] ' .. message)
         debugLog('DIAG: ' .. message)
@@ -3193,7 +3223,7 @@ local function compareVersionParts(a, b)
     return 0
 end
 
-local function currentScriptVersion() return '5.4' end
+local function currentScriptVersion() return '5.5' end
 
 local function updaterDownload(url, path, callback)
     local callbackDone = false
@@ -3606,7 +3636,7 @@ end
     end)
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 5.4 ==========')
+    chatInfo('========== Recruit Helper 5.5 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -3627,6 +3657,7 @@ local function showRecruitHelp()
     chatInfo('/rstop')
     chatInfo('/rstatus')
     chatInfo('/rnick')
+    chatInfo('/rmanual — ручная проверка проф.пригодности')
     chatInfo('/rexceptions [head|yes|no|all]')
     chatInfo('/rvariants [head|yes|no|all]')
     chatInfo('/roff')
@@ -3675,7 +3706,24 @@ end
     sampRegisterChatCommand('rstop', function() clearSession('manual stop') chatInfo('Проверка остановлена.') end)
     sampRegisterChatCommand('rstatus', printStatus)
     sampRegisterChatCommand('raccept', forceAcceptCurrentCandidate)
-    
+    sampRegisterChatCommand('klakson', function()
+        klaksonDisabled = not klaksonDisabled
+        if klaksonDisabled and protectedHitAudio then
+            if type(setAudioStreamState) == 'function' then pcall(setAudioStreamState, protectedHitAudio, 0) end
+            if type(releaseAudioStream) == 'function' then pcall(releaseAudioStream, protectedHitAudio) end
+            protectedHitAudio = nil
+        end
+        chatInfo('Звук удара для Jensen_Ackles: ' .. (klaksonDisabled and 'ВЫКЛЮЧЕН' or 'включён'))
+    end)
+    sampRegisterChatCommand('rmanual', function()
+        CONFIG.manualProfessionalCheck = not CONFIG.manualProfessionalCheck
+        if CONFIG.manualProfessionalCheck then
+            chatInfo('Ручной режим проверки проф.пригодности ВКЛЮЧЁН: скрипт не оценивает ответ; ALT подтверждает ответ и продолжает проверку.')
+        else
+            chatInfo('Ручной режим проверки проф.пригодности выключен: ответ снова проверяет скрипт.')
+        end
+    end)
+
     local function skipActiveTimer()
         if not session.active then chatInfo('Активной проверки нет.') return end
         if session.stage == 'q1' or session.stage == 'rp_menu' or session.stage == 'rp_custom' or session.stage == 'q2' or session.stage == 'q2_retry' or session.stage == 'q2_retry_hint' or session.stage == 'q3' then
@@ -3705,9 +3753,9 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 5.4 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 5.5 loaded. Safe CEF mode enabled; FFI packet scan removed.')
     initAutoBinderSchedule(true)
-    chatInfo('Recruit Helper 5.4 загружен.')
+    chatInfo('Recruit Helper 5.5 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
