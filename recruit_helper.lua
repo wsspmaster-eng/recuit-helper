@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('6.7')
-script_description('Recruit Helper 6.7: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv. + Anime')
+script_version('67')
+script_description('Recruit Helper 67: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -18,34 +18,35 @@ local dlstatus = moonOk and moon.download_status or nil
 -- НАСТРОЙКИ
 -- ============================================================================
 local CONFIG = {
-    nearDistance = 6.0,           
-    frontDot = 0.25,              
-    autoAcceptOffer = true,       
+    nearDistance = 6.0,           -- максимальная дистанция поиска игрока
+    frontDot = 0.25,              -- ширина сектора перед персонажем; меньше = шире
+    autoAcceptOffer = true,       -- автоматически вводить /offer
     autoSwitchDocumentPages = true,
-    autoInvite = true,            
-    outboundDelayMs = 3000,      
-    chatDelayMs = 3000,          
-    retryQuestionDelayMs = 5000, 
-    hotkeyAltN = true,            
+    autoInvite = true,            -- автоматически вводить /inv ID после успешной проверки
+    outboundDelayMs = 3000,      -- единая пауза между ЛЮБЫМИ сообщениями/чат-командами, отправляемыми на сервер
+    chatDelayMs = 3000,          -- совместимость со старой логикой; фактический минимум задаёт outboundDelayMs
+    retryQuestionDelayMs = 5000, -- пауза между RP-примером (брендом) и повторным вопросом Q2
+    hotkeyAltN = true,            -- Alt + 1 запускает то же, что /near
     debug = true,
-    fileLog = true,              
-    packetLog = false,            
-    packetLogLimit = 40,          
-    maxCefPayloadBytes = 65536,   
-    maxOutboundQueue = 120,       
-    maxScheduledActions = 120,    
-    gcIntervalMs = 60000,         
-    healthLogIntervalMs = 600000, 
-    maxCandidateMessageBytes = 92, 
-    checkRpNicknameOnline = true, 
-    strictRpNicknameOnline = false, 
-    blockBadNicknameFormat = true,  
+    fileLog = true,              -- писать обычную диагностику и health-check в файл
+    packetLog = false,            -- v2.0.4: сырое логирование пакетов выключено по умолчанию
+    packetLogLimit = 40,          -- лимит диагностических записей CEF на одну проверку
+    maxCefPayloadBytes = 65536,   -- защита от повреждённых/аномально больших CEF-пакетов
+    maxOutboundQueue = 120,       -- защита от бесконечного роста очереди исходящих сообщений
+    maxScheduledActions = 120,    -- защита от бесконечного роста очереди отложенных действий
+    gcIntervalMs = 60000,         -- мягкий шаг сборщика мусора раз в минуту
+    healthLogIntervalMs = 600000, -- раз в 10 минут писать краткое состояние в debug-log
+    maxCandidateMessageBytes = 92, -- длинные RP-сообщения автоматически дробятся на короткие строки
+    checkRpNicknameOnline = true, -- проверять имя/фамилию через Namespedia
+    strictRpNicknameOnline = false, -- онлайн-проверка только подсказка; true = считать её причиной отказа
+    blockBadNicknameFormat = true,  -- некорректный формат Name_Surname является причиной отказа
     nicknameCheckTimeoutMs = 6000,
-    interviewHud = true,          
+    interviewHud = true,          -- мини-панель справа снизу
     interviewHudFontSize = 10,
-    manualInterview = true,       
-    manualProfessionalCheck = false, 
+    manualInterview = true,       -- с «Расскажите о себе» никаких авто-таймеров
+    manualProfessionalCheck = false, -- ручной режим проверки профессиональной пригодности (вы проверяете ответ, не скрипт)
 
+    -- Обновление Recruit Helper.
     updateManifestUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/version.txt',
     updateScriptUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/recruit_helper.lua',
     updateAssets = {
@@ -65,14 +66,14 @@ local CONFIG = {
             relativePath = 'hit-warnings\\general.mp3',
         },
     },
-    updateCheckOnStart = true,    
+    updateCheckOnStart = true,    -- автоматическая проверка при входе
 
     -- Автобиндер.
-    autoBinderEnabled = true,          
-    discordBinderEnabled = true,       
-    discordBinderIntervalMs = 3600000, 
-    autoBinderRetryMs = 60000,         
-    discordFirstDelayMs = 3600000,     
+    autoBinderEnabled = true,          -- общий мастер-переключатель автобиндера
+    discordBinderEnabled = true,       -- Discord включён
+    discordBinderIntervalMs = 3600000, -- Discord: каждые 60 минут
+    autoBinderRetryMs = 60000,         -- если идёт призыв/VOiS/очередь занята — повтор через минуту
+    discordFirstDelayMs = 3600000,     -- первый Discord через 60 минут
 }
 
 local PREFIX = '{84D7FF}[Recruit]{FFFFFF} '
@@ -107,6 +108,7 @@ local function cp(text)
     return u8:decode(text)
 end
 
+-- Защита выбранных игроков от случайных ударов.
 local CREATOR_WARN_COOLDOWN = 0
 local protectedHitAudio = nil
 local klaksonDisabled = false
@@ -191,9 +193,12 @@ local function checkProtectedHit(playerId)
     local target = PROTECTED_HIT_TARGETS[nick]
     if not target then return end
 
+    -- Фиксируем кулдаун даже когда звук Jensen_Ackles выключен,
+    -- чтобы сообщение не спамилось при каждом пакете урона.
     CREATOR_WARN_COOLDOWN = now
 
     if nick == 'Jensen_Ackles' and klaksonDisabled then
+        -- /klakson отключает только звук; текстовое предупреждение остаётся.
         if target.message then
             sampAddChatMessage(cp(target.message), target.color or 0xFFCC44)
         end
@@ -217,11 +222,15 @@ local function consoleIsValidUtf8(text)
 
     while i <= n do
         local b1 = text:byte(i)
-        if b1 < 0x80 then i = i + 1
+
+        if b1 < 0x80 then
+            i = i + 1
+
         elseif b1 >= 0xC2 and b1 <= 0xDF then
             local b2 = text:byte(i + 1)
             if not b2 or b2 < 0x80 or b2 > 0xBF then return false end
             i = i + 2
+
         elseif b1 >= 0xE0 and b1 <= 0xEF then
             local b2, b3 = text:byte(i + 1), text:byte(i + 2)
             if not b2 or not b3 then return false end
@@ -229,17 +238,24 @@ local function consoleIsValidUtf8(text)
             if b1 == 0xE0 and b2 < 0xA0 then return false end
             if b1 == 0xED and b2 > 0x9F then return false end
             i = i + 3
+
         elseif b1 >= 0xF0 and b1 <= 0xF4 then
             local b2, b3, b4 = text:byte(i + 1), text:byte(i + 2), text:byte(i + 3)
             if not b2 or not b3 or not b4 then return false end
-            if b2 < 0x80 or b2 > 0xBF or b3 < 0x80 or b3 > 0xBF or b4 < 0x80 or b4 > 0xBF then return false end
+            if b2 < 0x80 or b2 > 0xBF
+                or b3 < 0x80 or b3 > 0xBF
+                or b4 < 0x80 or b4 > 0xBF then
+                return false
+            end
             if b1 == 0xF0 and b2 < 0x90 then return false end
             if b1 == 0xF4 and b2 > 0x8F then return false end
             i = i + 4
+
         else
             return false
         end
     end
+
     return true
 end
 
@@ -247,14 +263,19 @@ local function consoleText(text)
     text = tostring(text or '')
     if consoleIsValidUtf8(text) then
         local ok, converted = pcall(cp, text)
-        if ok and type(converted) == 'string' then return converted end
+        if ok and type(converted) == 'string' then
+            return converted
+        end
     end
     return text
 end
 
 local function consolePrint(text)
     local value = consoleText(text)
-    pcall(print, value)
+    local ok = pcall(print, value)
+    if not ok then
+        pcall(print, '[Recruit Helper] console print error')
+    end
 end
 
 local function chatInfo(text)
@@ -269,8 +290,10 @@ end
 
 local function debugLog(text)
     if not CONFIG.debug then return end
+
     local line = os.date('[%Y-%m-%d %H:%M:%S] ') .. tostring(text)
     consolePrint('[Recruit Assistant] ' .. tostring(text))
+
     if CONFIG.fileLog then
         local file = io.open(getDebugLogPath(), 'a')
         if file then
@@ -291,9 +314,12 @@ end
 local function ruLower(text)
     return (tostring(text or ''):gsub('.', function(ch)
         local byte = ch:byte()
-        if byte >= 0xC0 and byte <= 0xDF then return string.char(byte + 0x20)
-        elseif byte == 0xA8 then return string.char(0xB8)
-        elseif byte >= 0x41 and byte <= 0x5A then return string.char(byte + 0x20)
+        if byte >= 0xC0 and byte <= 0xDF then
+            return string.char(byte + 0x20)
+        elseif byte == 0xA8 then
+            return string.char(0xB8)
+        elseif byte >= 0x41 and byte <= 0x5A then
+            return string.char(byte + 0x20)
         end
         return ch
     end))
@@ -302,13 +328,17 @@ end
 local function splitWords(text)
     local cleaned = ruLower(trim(text)):gsub('[%p%c]+', ' ')
     local words = {}
-    for word in cleaned:gmatch('%S+') do words[#words + 1] = word end
+    for word in cleaned:gmatch('%S+') do
+        words[#words + 1] = word
+    end
     return words
 end
 
 local function hasWord(text, expected)
     for _, word in ipairs(splitWords(text)) do
-        if word == expected then return true end
+        if word == expected then
+            return true
+        end
     end
     return false
 end
@@ -317,19 +347,25 @@ local outboundQueue = {}
 local outboundNextSendAt = 0
 local scheduledActions = {}
 
--- ОПТИМИЗАЦИЯ: Разрешаем вызов таймера без pcall, так как это снижает нагрузку на CPU
-local sysGetTimer = type(getGameTimer) == 'function' and getGameTimer or function() return math.floor(os.clock() * 1000) end
 local function nowMs()
-    return sysGetTimer()
+    if type(getGameTimer) == 'function' then
+        local ok, value = pcall(getGameTimer)
+        if ok and type(value) == 'number' then
+            return value
+        end
+    end
+    return os.time() * 1000
 end
 
 local function scheduleAction(delayMs, fn)
     if type(fn) ~= 'function' then return false end
+
     local limit = tonumber(CONFIG.maxScheduledActions) or 120
     if #scheduledActions >= limit then
         debugLog('Scheduled action rejected: queue limit ' .. tostring(limit) .. ' reached.')
         return false
     end
+
     scheduledActions[#scheduledActions + 1] = {
         at = nowMs() + math.max(0, tonumber(delayMs) or 0),
         fn = fn,
@@ -346,7 +382,9 @@ local function processScheduledActions()
         if now >= action.at then
             table.remove(scheduledActions, i)
             local ok, err = pcall(action.fn)
-            if not ok then debugLog('Scheduled action failed: ' .. tostring(err)) end
+            if not ok then
+                debugLog('Scheduled action failed: ' .. tostring(err))
+            end
         else
             i = i + 1
         end
@@ -355,11 +393,13 @@ end
 
 local function enqueueOutbound(text, kind, testModeSnapshot, testSuffix, onSent)
     if type(text) ~= 'string' or text == '' then return false end
+
     local limit = tonumber(CONFIG.maxOutboundQueue) or 120
     if #outboundQueue >= limit then
         debugLog('Outbound item rejected: queue limit ' .. tostring(limit) .. ' reached. text=' .. tostring(text))
         return false
     end
+
     outboundQueue[#outboundQueue + 1] = {
         text = text,
         kind = kind or 'message',
@@ -374,23 +414,39 @@ local function processOutboundQueue()
     if #outboundQueue == 0 then return end
     local now = nowMs()
     if now < outboundNextSendAt then return end
+
     local item = table.remove(outboundQueue, 1)
     local ok, err = pcall(function()
         if item.testMode then
-            if item.kind == 'local_command' then chatInfo('[TEST локальная команда] ' .. item.text .. (item.testSuffix or ''))
-            elseif item.kind == 'command' then chatInfo('[TEST команда] ' .. item.text .. (item.testSuffix or ''))
-            else chatInfo('[TEST -> кандидату] ' .. item.text) end
+            if item.kind == 'local_command' then
+                chatInfo('[TEST локальная команда] ' .. item.text .. (item.testSuffix or ''))
+            elseif item.kind == 'command' then
+                chatInfo('[TEST команда] ' .. item.text .. (item.testSuffix or ''))
+            else
+                chatInfo('[TEST -> кандидату] ' .. item.text)
+            end
         else
-            if item.kind == 'local_command' then sampProcessChatInput(item.text)
-            elseif item.kind == 'command' then sampSendChat(item.text)
-            else sampSendChat(cp(item.text)) end
+            if item.kind == 'local_command' then
+                sampProcessChatInput(item.text)
+            elseif item.kind == 'command' then
+                sampSendChat(item.text)
+            else
+                sampSendChat(cp(item.text))
+            end
         end
     end)
+
     outboundNextSendAt = now + (tonumber(CONFIG.outboundDelayMs) or 3000)
-    if not ok then debugLog('Outbound send failed: ' .. tostring(err)) end
+
+    if not ok then
+        debugLog('Outbound send failed: ' .. tostring(err))
+    end
+
     if type(item.onSent) == 'function' then
         local callbackOk, callbackErr = pcall(item.onSent)
-        if not callbackOk then debugLog('Outbound callback failed: ' .. tostring(callbackErr)) end
+        if not callbackOk then
+            debugLog('Outbound callback failed: ' .. tostring(callbackErr))
+        end
     end
 end
 
@@ -400,33 +456,54 @@ local lastHealthLogAt = 0
 local function processMaintenance()
     local interval = tonumber(CONFIG.gcIntervalMs) or 60000
     local now = nowMs()
+
     if lastGcStepAt == 0 or now < lastGcStepAt or now - lastGcStepAt >= interval then
         lastGcStepAt = now
-        local ok, err = pcall(function() collectgarbage('step', 200) end)
-        if not ok then debugLog('GC step failed: ' .. tostring(err)) end
+        local ok, err = pcall(function()
+            collectgarbage('step', 200)
+        end)
+        if not ok then
+            debugLog('GC step failed: ' .. tostring(err))
+        end
     end
 
     local healthInterval = tonumber(CONFIG.healthLogIntervalMs) or 600000
     if lastHealthLogAt == 0 or now < lastHealthLogAt or now - lastHealthLogAt >= healthInterval then
         lastHealthLogAt = now
         local memoryKb = 0
-        local okMemory, value = pcall(function() return collectgarbage('count') end)
-        if okMemory and type(value) == 'number' then memoryKb = math.floor(value) end
-        debugLog('Health: luaKB=' .. tostring(memoryKb) .. ', outbound=' .. tostring(#outboundQueue) .. ', scheduled=' .. tostring(#scheduledActions) .. ', recruit=' .. tostring(session and session.stage or 'n/a'))
+        local okMemory, value = pcall(function()
+            return collectgarbage('count')
+        end)
+        if okMemory and type(value) == 'number' then
+            memoryKb = math.floor(value)
+        end
+
+        debugLog(
+            'Health: luaKB=' .. tostring(memoryKb)
+            .. ', outbound=' .. tostring(#outboundQueue)
+            .. ', scheduled=' .. tostring(#scheduledActions)
+            .. ', recruit=' .. tostring(session and session.stage or 'n/a')
+        )
     end
 end
 
 local function outboundEncodedLength(text)
     local ok, converted = pcall(cp, tostring(text or ''))
-    if ok and type(converted) == 'string' then return #converted end
+    if ok and type(converted) == 'string' then
+        return #converted
+    end
     return #tostring(text or '')
 end
 
 local function splitCandidateText(text)
     text = trim(tostring(text or ''))
     if text == '' then return {} end
+
     local maxBytes = tonumber(CONFIG.maxCandidateMessageBytes) or 92
-    if outboundEncodedLength(text) <= maxBytes then return {text} end
+    if outboundEncodedLength(text) <= maxBytes then
+        return {text}
+    end
+
     local chunks, current = {}, ''
     for word in text:gmatch('%S+') do
         if current ~= '' and current:match('[%.%!%?]$') then
@@ -437,10 +514,14 @@ local function splitCandidateText(text)
             if current ~= '' and outboundEncodedLength(candidate) > maxBytes then
                 chunks[#chunks + 1] = current
                 current = word
-            else current = candidate end
+            else
+                current = candidate
+            end
         end
     end
-    if current ~= '' then chunks[#chunks + 1] = current end
+    if current ~= '' then
+        chunks[#chunks + 1] = current
+    end
     return chunks
 end
 
@@ -454,7 +535,9 @@ end
 
 local function sendChatLines(lines, delayMs)
     for _, line in ipairs(lines or {}) do
-        if type(line) == 'string' and line ~= '' then enqueueCandidateText(line) end
+        if type(line) == 'string' and line ~= '' then
+            enqueueCandidateText(line)
+        end
     end
 end
 
@@ -580,12 +663,17 @@ local lastRpPhraseIndex = {}
 
 local function rpPhrase(key)
     local list = RP_PHRASES[key]
-    if type(list) ~= 'table' or #list == 0 then return tostring(key or '') end
+    if type(list) ~= 'table' or #list == 0 then
+        return tostring(key or '')
+    end
+
     local index = 1
     if #list > 1 then
         index = math.random(1, #list)
         local previous = lastRpPhraseIndex[key]
-        if previous and index == previous then index = (index % #list) + 1 end
+        if previous and index == previous then
+            index = (index % #list) + 1
+        end
     end
     lastRpPhraseIndex[key] = index
     return list[index]
@@ -596,28 +684,41 @@ local function getSelfIdForShowPass()
         local ok, id = sampGetPlayerIdByCharHandle(PLAYER_PED)
         return ok, id
     end)
-    if okCall and okPlayer and selfId ~= nil then return tonumber(selfId) end
+
+    if okCall and okPlayer and selfId ~= nil then
+        return tonumber(selfId)
+    end
+
     return nil
 end
 
 local function sendShowPassInstruction(attempt)
     attempt = tonumber(attempt) or 1
+
     local selfId = getSelfIdForShowPass()
     if selfId ~= nil then
         local line = '/b Передача документов ПО РП!!! Используйте /showpass ' .. tostring(selfId)
+
         local encoded = line
         local okEncode, converted = pcall(cp, line)
-        if okEncode and type(converted) == 'string' then encoded = converted end
+        if okEncode and type(converted) == 'string' then
+            encoded = converted
+        end
+
         enqueueOutbound(encoded, 'command', session.testMode)
         debugLog('ShowPass instruction queued. selfId=' .. tostring(selfId))
         return true
     end
+
     if attempt < 10 then
-        scheduleAction(500, function() sendShowPassInstruction(attempt + 1) end)
+        scheduleAction(500, function()
+            sendShowPassInstruction(attempt + 1)
+        end)
     else
         chatInfo('Не удалось определить ваш игровой ID для /showpass. Используйте /showpass вручную.')
         debugLog('ShowPass instruction failed: local player ID unavailable after 10 attempts.')
     end
+
     return false
 end
 
@@ -652,16 +753,28 @@ local AUTO_VOIS = {
 local AUTO_VOIS_TAG = cp('ВОиС')
 
 local autoVoisState = {
-    active = false, step = 0, token = 0, playerId = nil, playerNick = nil,
-    resolving = false, resolveNick = nil, resolveTries = 0, nextResolveAt = 0, deadlineAt = 0,
+    active = false,
+    step = 0,
+    token = 0,
+    playerId = nil,
+    playerNick = nil,
+    resolving = false,
+    resolveNick = nil,
+    resolveTries = 0,
+    nextResolveAt = 0,
+    deadlineAt = 0,
 }
 
 local function autoVoisChat(message, color)
     local line = '[Auto VOiS] ' .. tostring(message)
     consolePrint(line)
     if isSampAvailable() then
-        local ok, err = pcall(function() sampAddChatMessage(cp(line), color or 0x6EDC6E) end)
-        if not ok then debugLog('Auto VOiS chat failed: ' .. tostring(err)) end
+        local ok, err = pcall(function()
+            sampAddChatMessage(cp(line), color or 0x6EDC6E)
+        end)
+        if not ok then
+            debugLog('Auto VOiS chat failed: ' .. tostring(err))
+        end
     end
 end
 
@@ -694,32 +807,51 @@ local function autoVoisFindPlayerIdByNickname(nickname)
     if not nickname or nickname == '' then return nil end
     local target = nickname:lower()
     local maxId = 999
-    local okMax, currentMax = pcall(function() return sampGetMaxPlayerId(true) end)
-    if okMax and type(currentMax) == 'number' and currentMax >= 0 then maxId = math.min(999, currentMax) end
+    local okMax, currentMax = pcall(function()
+        return sampGetMaxPlayerId(true)
+    end)
+    if okMax and type(currentMax) == 'number' and currentMax >= 0 then
+        maxId = math.min(999, currentMax)
+    end
+
     for playerId = 0, maxId do
         if sampIsPlayerConnected(playerId) then
             local currentNickname = sampGetPlayerNickname(playerId)
-            if currentNickname and currentNickname:lower() == target then return playerId end
+            if currentNickname and currentNickname:lower() == target then
+                return playerId
+            end
         end
     end
     return nil
 end
 
 local function autoVoisGetCurrentDialogIdSafe()
-    local okActive, active = pcall(function() return sampIsDialogActive() end)
+    local okActive, active = pcall(function()
+        return sampIsDialogActive()
+    end)
     if not okActive or not active then return nil end
-    local okId, dialogId = pcall(function() return sampGetCurrentDialogId() end)
+
+    local okId, dialogId = pcall(function()
+        return sampGetCurrentDialogId()
+    end)
     if not okId then return nil end
+
     return dialogId
 end
 
 local function autoVoisSendDialogResponseSafe(dialogId, button, listItem, inputText)
     local currentDialogId = autoVoisGetCurrentDialogIdSafe()
     if currentDialogId ~= dialogId then
-        return false, 'текущий диалог: ' .. tostring(currentDialogId) .. ', ожидался: ' .. tostring(dialogId)
+        return false, 'текущий диалог: ' .. tostring(currentDialogId)
+            .. ', ожидался: ' .. tostring(dialogId)
     end
-    local ok, err = pcall(function() sampSendDialogResponse(dialogId, button or 1, listItem or 0, inputText or '') end)
-    if not ok then return false, tostring(err) end
+
+    local ok, err = pcall(function()
+        sampSendDialogResponse(dialogId, button or 1, listItem or 0, inputText or '')
+    end)
+    if not ok then
+        return false, tostring(err)
+    end
     return true
 end
 
@@ -727,7 +859,9 @@ local function autoVoisScheduleDialogResponse(dialogId, nextStep, listItem, inpu
     local token = autoVoisState.token
     autoVoisState.step = nextStep
     scheduleAction(delayMs or AUTO_VOIS.dialogDelayMs, function()
-        if not AUTO_VOIS.enabled or not autoVoisState.active or autoVoisState.token ~= token then return end
+        if not AUTO_VOIS.enabled or not autoVoisState.active or autoVoisState.token ~= token then
+            return
+        end
         local ok, err = autoVoisSendDialogResponseSafe(dialogId, 1, listItem or 0, inputText or '')
         if not ok then
             autoVoisChat('Ответ диалогу ' .. tostring(dialogId) .. ' отменён: ' .. tostring(err), 0xFF7777)
@@ -750,7 +884,9 @@ local function autoVoisSubmitPlayerId()
     local idText = tostring(playerId)
     autoVoisState.step = 4
     scheduleAction(AUTO_VOIS.inputSubmitDelayMs, function()
-        if not AUTO_VOIS.enabled or not autoVoisState.active or autoVoisState.token ~= token then return end
+        if not AUTO_VOIS.enabled or not autoVoisState.active or autoVoisState.token ~= token then
+            return
+        end
         local okDialog, dialogError = autoVoisSendDialogResponseSafe(AUTO_VOIS.dialogUnitInput, 1, 0, idText)
         if not okDialog then
             autoVoisChat('Отправка ID отменена: ' .. tostring(dialogError), 0xFF7777)
@@ -759,7 +895,9 @@ local function autoVoisSubmitPlayerId()
         end
         autoVoisChat('ID ' .. idText .. ' отправлен. Жду перед выдачей тега...')
         scheduleAction(AUTO_VOIS.setTagDelayMs, function()
-            if not AUTO_VOIS.enabled or not autoVoisState.active or autoVoisState.token ~= token then return end
+            if not AUTO_VOIS.enabled or not autoVoisState.active or autoVoisState.token ~= token then
+                return
+            end
             local command = '/settag ' .. idText .. ' ' .. AUTO_VOIS_TAG
             enqueueOutbound(command, 'command', false)
             autoVoisChat('В очередь поставлено: /settag ' .. idText .. ' ВОиС для ' .. playerNick .. '.')
@@ -837,11 +975,16 @@ local DISCORD_BIND = {
     '/rb https://discord.gg/arzspace',
 }
 
-local function discordBinderInterval() return math.max(60000, tonumber(CONFIG.discordBinderIntervalMs) or 3600000) end
-local function autoBinderRetry() return math.max(10000, tonumber(CONFIG.autoBinderRetryMs) or 60000) end
+local function discordBinderInterval()
+    return math.max(60000, tonumber(CONFIG.discordBinderIntervalMs) or 3600000)
+end
+
+local function autoBinderRetry()
+    return math.max(10000, tonumber(CONFIG.autoBinderRetryMs) or 60000)
+end
 
 local function initAutoBinderSchedule(resetAll)
-    local now = nowMs()
+    local now = autoBinderNowMs()
     if AUTO_BINDER.initialized and not resetAll then return end
     AUTO_BINDER.initialized = true
     AUTO_BINDER.startedAt = now
@@ -861,7 +1004,9 @@ local function enqueueRadioBinder(lines, title)
     for _, line in ipairs(lines) do
         local encoded = line
         local okEncode, converted = pcall(cp, line)
-        if okEncode and type(converted) == 'string' then encoded = converted end
+        if okEncode and type(converted) == 'string' then
+            encoded = converted
+        end
         if not enqueueOutbound(encoded, 'command', false) then
             debugLog('AutoBinder: не удалось поставить строку в очередь: ' .. tostring(line))
             return false
@@ -884,7 +1029,7 @@ end
 local function processAutoBinder()
     if not AUTO_BINDER.enabled then return end
     initAutoBinderSchedule(false)
-    local now = nowMs()
+    local now = autoBinderNowMs()
     local minFirstDelay = math.max(60000, tonumber(CONFIG.discordFirstDelayMs) or 3600000)
     if AUTO_BINDER.startedAt <= 0 or (now - AUTO_BINDER.startedAt) < minFirstDelay then return end
 
@@ -904,7 +1049,7 @@ end
 
 local function autoBinderTimeLeft(targetAt)
     if not AUTO_BINDER.initialized then return '?' end
-    local left = math.max(0, tonumber(targetAt or 0) - nowMs())
+    local left = math.max(0, tonumber(targetAt or 0) - autoBinderNowMs())
     if left < 115000 then return '~' .. tostring(math.ceil(left / 1000)) .. ' сек.' end
     return '~' .. tostring(math.ceil(left / 60000)) .. ' мин.'
 end
@@ -932,13 +1077,15 @@ local function setAutoBinderEnabled(value)
     end
 end
 
-local function toggleAutoBinder() setAutoBinderEnabled(not AUTO_BINDER.enabled) end
+local function toggleAutoBinder()
+    setAutoBinderEnabled(not AUTO_BINDER.enabled)
+end
 
 local function setDiscordBinderEnabled(value)
     value = value == true
     AUTO_BINDER.discordEnabled = value
     if value then
-        AUTO_BINDER.discordNextAt = nowMs() + math.max(60000, tonumber(CONFIG.discordFirstDelayMs) or 3600000)
+        AUTO_BINDER.discordNextAt = autoBinderNowMs() + math.max(60000, tonumber(CONFIG.discordFirstDelayMs) or 3600000)
         chatInfo('Автобиндер Discord включён.')
     else
         chatInfo('Автобиндер Discord выключен.')
@@ -1057,22 +1204,39 @@ end
 
 local function newDocsState()
     return {
-        name = nil, years = nil, law = nil, car = nil, gun = nil, health = nil,
-        dependency = nil, medicalExists = nil, gotPassport = false, gotLicenses = false, gotMedical = false,
+        name = nil,
+        years = nil,
+        law = nil,
+        car = nil,
+        gun = nil,
+        health = nil,
+        dependency = nil,
+        medicalExists = nil,
+        gotPassport = false,
+        gotLicenses = false,
+        gotMedical = false,
     }
 end
 
 local function validateRpNicknameFormat(nickname)
     nickname = tostring(nickname or '')
     local first, last = nickname:match("^([A-Z][A-Za-z'%-]+)_([A-Z][A-Za-z'%-]+)$")
-    if not first or not last then return false, nil, nil, 'ник должен иметь вид Name_Surname латиницей' end
-    if #first < 2 or #last < 2 then return false, first, last, 'имя и фамилия слишком короткие' end
-    if nickname:find('__', 1, true) then return false, first, last, 'двойное подчёркивание недопустимо' end
+    if not first or not last then
+        return false, nil, nil, 'ник должен иметь вид Name_Surname латиницей'
+    end
+    if #first < 2 or #last < 2 then
+        return false, first, last, 'имя и фамилия слишком короткие'
+    end
+    if nickname:find('__', 1, true) then
+        return false, first, last, 'двойное подчёркивание недопустимо'
+    end
     return true, first, last, nil
 end
 
 local function urlEncode(textValue)
-    return (tostring(textValue or ''):gsub('([^%w%-%._~])', function(ch) return string.format('%%%02X', ch:byte()) end))
+    return (tostring(textValue or ''):gsub('([^%w%-%._~])', function(ch)
+        return string.format('%%%02X', ch:byte())
+    end))
 end
 
 local function parseNamespediaUsage(html)
@@ -1090,10 +1254,19 @@ local nicknameCheckSerial = 0
 local function startRpNicknameCheck(nickname, attachToSession)
     nickname = tostring(nickname or '')
     local valid, first, last, reason = validateRpNicknameFormat(nickname)
-    local check = { nickname = nickname, localValid = valid, first = first, last = last, onlineDone = false, onlineSuspicious = false }
+    local check = {
+        nickname = nickname,
+        localValid = valid,
+        first = first,
+        last = last,
+        onlineDone = false,
+        onlineSuspicious = false,
+    }
+
     if attachToSession then session.nickCheck = check end
 
-    if valid then chatInfo('RP-ник: формат ' .. nickname .. ' корректен. Проверяю, RP он или НРП...')
+    if valid then
+        chatInfo('RP-ник: формат ' .. nickname .. ' корректен. Проверяю, RP он или НРП...')
     else
         chatInfo('RP-ник: ник точно НРП — ' .. tostring(reason) .. '.')
         return check
@@ -1123,11 +1296,15 @@ local function startRpNicknameCheck(nickname, attachToSession)
         if not force and results.pending > 0 then return end
         results.finished = true
         check.onlineDone = true
+
         if not stillRelevant() and attachToSession then return end
+
         local firstPct = results.first and results.first.firstPct or nil
         local surnamePct = results.last and results.last.surnamePct or nil
 
-        if firstPct == nil or surnamePct == nil then chatInfo('RP-ник: не удалось точно определить RP/НРП — Namespedia не дала полный ответ.')
+        -- Проценты Namespedia намеренно не показываем: пользователю нужен только итог RP/НРП.
+        if firstPct == nil or surnamePct == nil then
+            chatInfo('RP-ник: не удалось точно определить RP/НРП — Namespedia не дала полный ответ.')
         elseif firstPct <= 0 or surnamePct <= 0 then
             check.onlineSuspicious = true
             chatInfo('RP-ник: ник точно НРП.')
@@ -1169,6 +1346,7 @@ local function startRpNicknameCheck(nickname, attachToSession)
 
     fetchPart(first, 'first')
     fetchPart(last, 'last')
+
     scheduleAction(CONFIG.nicknameCheckTimeoutMs, function() finalize(true) end)
     return check
 end
@@ -1282,7 +1460,9 @@ local function editDistanceAtMostOne(a, b)
         elseif not skipped then
             skipped = true
             j = j + 1
-        else return false end
+        else
+            return false
+        end
     end
     return true
 end
@@ -1363,6 +1543,71 @@ local function parseFirstNumber(value)
     local matched = tostring(value):match('(%d+[%.,]?%d*)')
     if not matched then return nil end
     return tonumber((matched:gsub(',', '.')))
+end
+
+local function isValidUtf8(text)
+    text = tostring(text or '')
+    local i, n = 1, #text
+    while i <= n do
+        local b1 = text:byte(i)
+        if b1 < 0x80 then i = i + 1
+        elseif b1 >= 0xC2 and b1 <= 0xDF then
+            local b2 = text:byte(i + 1)
+            if not b2 or b2 < 0x80 or b2 > 0xBF then return false end
+            i = i + 2
+        elseif b1 >= 0xE0 and b1 <= 0xEF then
+            local b2, b3 = text:byte(i + 1), text:byte(i + 2)
+            if not b2 or not b3 then return false end
+            if b2 < 0x80 or b2 > 0xBF or b3 < 0x80 or b3 > 0xBF then return false end
+            if b1 == 0xE0 and b2 < 0xA0 then return false end
+            if b1 == 0xED and b2 > 0x9F then return false end
+            i = i + 3
+        elseif b1 >= 0xF0 and b1 <= 0xF4 then
+            local b2, b3, b4 = text:byte(i + 1), text:byte(i + 2), text:byte(i + 3)
+            if not b2 or not b3 or not b4 then return false end
+            if b2 < 0x80 or b2 > 0xBF or b3 < 0x80 or b3 > 0xBF or b4 < 0x80 or b4 > 0xBF then return false end
+            if b1 == 0xF0 and b2 < 0x90 then return false end
+            if b1 == 0xF4 and b2 > 0x8F then return false end
+            i = i + 4
+        else
+            return false
+        end
+    end
+    return true
+end
+
+local function toCp1251Safe(value)
+    local text = tostring(value or '')
+    if text == '' then return text end
+    if not isValidUtf8(text) then return text end
+    local ok, converted = pcall(function() return u8:decode(text) end)
+    if ok and type(converted) == 'string' then return converted end
+    return text
+end
+
+local function containsHealthyMark(value)
+    local original = tostring(value or '')
+    if original == '' then return false end
+    local cpText = ruLower(toCp1251Safe(original))
+    local originalLower = original:lower()
+    return cpText:find(cp('полностью здоров'), 1, true) ~= nil
+        or original:find('Полностью здоров', 1, true) ~= nil
+        or original:find('полностью здоров', 1, true) ~= nil
+        or original:find(cp('Полностью здоров'), 1, true) ~= nil
+        or original:find(cp('полностью здоров'), 1, true) ~= nil
+        or originalLower:find('fully healthy', 1, true) ~= nil
+end
+
+local function parseMedicalHealthStatus(value)
+    if value == nil then return nil, nil end
+    local numeric = tonumber(value)
+    if numeric ~= nil then
+        if numeric == -1 then return nil, -1
+        elseif numeric == 3 then return true, 3
+        elseif numeric == 0 or numeric == 1 or numeric == 2 then return false, numeric end
+    end
+    if type(value) == 'boolean' then return value, nil end
+    return containsHealthyMark(value), nil
 end
 
 local function tableContainsHealthyMark(value, depth)
@@ -2249,6 +2494,8 @@ local function processCurrentTermAnswer()
         return
     end
     if CONFIG.manualProfessionalCheck then
+        -- В ручном режиме сам факт нажатия ALT означает, что проверяющий
+        -- прочитал ответ и считает его подходящим. Автопроверка текста не запускается.
         chatInfo('Ручной режим: ответ подтверждён вами. Автопроверка отключена; перехожу к финальному вопросу.')
         beginQuestion('q3')
         return
@@ -2330,36 +2577,30 @@ local function getInterviewHudLines()
     return lines
 end
 
--- ОПТИМИЗАЦИЯ: Убрали pcall из отрисовки, так как это вызывает просадки FPS при вызове каждый кадр
-local sfRenderDrawBox = renderDrawBox
-local sfRenderFontDrawText = renderFontDrawText
-
 local function drawInterviewHud()
     if not CONFIG.interviewHud then return end
     local lines = getInterviewHudLines()
     if not lines or #lines == 0 then return end
     if not ensureInterviewHudFont() then return end
-    
-    local sx, sy = getScreenResolution()
-    if not sx or not sy then return end
-    
+    if type(getScreenResolution) ~= 'function' or type(renderFontDrawText) ~= 'function' then return end
+    local ok, sx, sy = pcall(getScreenResolution)
+    if not ok or not sx or not sy then return end
     local width = 390
     local lineHeight = 19
     local height = 18 + (#lines * lineHeight)
     local x = sx - width - 22
     local y = sy - height - 70
-    
-    if sfRenderDrawBox then sfRenderDrawBox(x - 10, y - 8, width + 16, height + 8, 0xA0000000) end
+    if type(renderDrawBox) == 'function' then pcall(renderDrawBox, x - 10, y - 8, width + 16, height + 8, 0xA0000000) end
     for i, line in ipairs(lines) do
         local color = (i == 1) and 0xFF84D7FF or 0xFFFFFFFF
-        if sfRenderFontDrawText then sfRenderFontDrawText(interviewHudFont, cp(line), x, y + (i - 1) * lineHeight, color) end
+        pcall(renderFontDrawText, interviewHudFont, cp(line), x, y + (i - 1) * lineHeight, color)
     end
 end
 
 local TOP_NUMBER_KEYS = {0x31, 0x32, 0x33, 0x34, 0x35}
+local KEY_ALT = vkeys.VK_MENU or 0x12
 local KEY_F = vkeys.VK_F or 0x46
 local KEY_G = vkeys.VK_G or 0x47
-local KEY_ALT = vkeys.VK_MENU or 0x12
 
 local function forceAcceptCurrentCandidate()
     if not session.active then chatInfo('Активной проверки нет.') return end
@@ -2833,14 +3074,12 @@ local function processStroyTimer()
     end
 end
 
--- ОПТИМИЗАЦИЯ: Убрали pcall из отрисовки 
 local function drawStroyHud()
     if not STROY_TIMER.active then return end
     if not ensureStroyHudFont() then return end
-    
-    local sx, sy = getScreenResolution()
-    if not sx or not sy then return end
-    
+    if type(getScreenResolution) ~= 'function' or type(renderFontDrawText) ~= 'function' then return end
+    local ok, sx, sy = pcall(getScreenResolution)
+    if not ok or not sx or not sy then return end
     local leftMs = math.max(0, STROY_TIMER.nextTickAt - nowMs())
     local seconds = math.ceil(leftMs / 1000)
     local mode = STROY_TIMER.testMode and 'ТЕСТ' or 'РЕАЛЬНЫЙ СТРОЙ'
@@ -2853,17 +3092,12 @@ local function drawStroyHud()
     local height = 38
     local x = sx - width - 22
     local y = sy - height - 16
-    
-    if sfRenderDrawBox then sfRenderDrawBox(x - 10, y - 7, width + 16, height + 10, 0xA0000000) end
+    if type(renderDrawBox) == 'function' then pcall(renderDrawBox, x - 10, y - 7, width + 16, height + 10, 0xA0000000) end
     for i, line in ipairs(lines) do
         local color = (i == 1) and 0xFFF5B642 or 0xFFFFFFFF
-        if sfRenderFontDrawText then sfRenderFontDrawText(stroyHudFont, cp(line), x, y + (i - 1) * lineHeight, color) end
+        pcall(renderFontDrawText, stroyHudFont, cp(line), x, y + (i - 1) * lineHeight, color)
     end
 end
-
-local showAnime = false
-local animeTexture = nil
-local sfRenderDrawTexture = renderDrawTexture
 
 function main()
     if not isSampLoaded() or not isSampfuncsLoaded() then return end
@@ -2883,26 +3117,6 @@ function main()
         autoVoisChat('enabled=' .. tostring(AUTO_VOIS.enabled) .. ', active=' .. tostring(autoVoisState.active) .. ', resolving=' .. tostring(autoVoisState.resolving) .. ', step=' .. tostring(autoVoisState.step) .. ', ID=' .. tostring(autoVoisState.playerId))
     end)
 
-    sampRegisterChatCommand('anime', function()
-        if not animeTexture then
-            local path = getWorkingDirectory() .. '\\anime.png'
-            if doesFileExist(path) then
-                local ok, tex = pcall(renderLoadTextureFromFile, path)
-                if ok and tex then
-                    animeTexture = tex
-                else
-                    chatInfo('Не удалось загрузить картинку. Убедитесь, что формат anime.png корректный!')
-                    return
-                end
-            else
-                chatInfo('Файл anime.png не найден! Поместите картинку в папку moonloader.')
-                return
-            end
-        end
-        showAnime = not showAnime
-        chatInfo('Аниме тяночка ' .. (showAnime and 'появилась на экране!' or 'скрыта.'))
-    end)
-
     local function showDiagnostics()
         local memoryKb = -1
         local okMemory, memoryValue = pcall(function() return collectgarbage('count') end)
@@ -2917,7 +3131,7 @@ function main()
         end
         local outboundCount = type(outboundQueue) == 'table' and #outboundQueue or -1
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
-        local message = 'v6.7 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
+        local message = 'v67 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
         local okChat, chatErr = pcall(function() chatInfo(message) end)
         consolePrint('[Recruit DIAG] ' .. message)
         debugLog('DIAG: ' .. message)
@@ -2946,7 +3160,7 @@ local function compareVersionParts(a, b)
     return 0
 end
 
-local function currentScriptVersion() return '6.7' end
+local function currentScriptVersion() return '67' end
 
 local function updaterDownload(url, path, callback)
     local callbackDone = false
@@ -3258,11 +3472,10 @@ end
     end)
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 6.7 ==========')
+    chatInfo('========== Recruit Helper 67 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
-    chatInfo('/anime')
     chatInfo('')
     chatInfo('Строй:')
     chatInfo('/str [минуты]')
@@ -3373,9 +3586,9 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 6.7 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 67 loaded. Safe CEF mode enabled; FFI packet scan removed.')
     initAutoBinderSchedule(true)
-    chatInfo('Recruit Helper 6.7 загружен.')
+    chatInfo('Recruit Helper 67 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
@@ -3386,45 +3599,27 @@ end
         end)
     end
 
-    local lastLogicTick = 0
-
     while true do
         wait(0)
-        local currentTick = nowMs()
-        
-        -- Отрисовка интерфейса и проверка кнопок (вызываются каждый кадр для плавности)
+        processScheduledActions()
+        processOutboundQueue()
+        processAutoVois()
+        processAutoBinder()
+        processMaintenance()
+        processStroyTimer()
         drawInterviewHud()
         drawStroyHud()
         handleInterviewHotkeys()
-
-        if showAnime and animeTexture then
-            local sx, sy = getScreenResolution()
-            if sx and sy and sfRenderDrawTexture then
-                sfRenderDrawTexture(animeTexture, sx - 450, sy - 550, 400, 500, 0, 0xFFFFFFFF)
-            end
-        end
 
         if CONFIG.hotkeyAltN and not sampIsChatInputActive() and not sampIsDialogActive() and isKeyDown(vkeys.VK_MENU) and wasKeyPressed(0x31) then
             startNearest()
         end
 
-        -- ОПТИМИЗАЦИЯ: Внутренние процессы выполняются раз в 50 мс, чтобы не нагружать процессор (увеличивает FPS)
-        if currentTick - lastLogicTick >= 50 then
-            processScheduledActions()
-            processOutboundQueue()
-            processAutoVois()
-            processAutoBinder()
-            processMaintenance()
-            processStroyTimer()
-
-            if session.active and not session.testMode and session.targetId and not sampIsPlayerConnected(session.targetId) then
-                chatInfo('Кандидат вышел из игры. Проверка остановлена.')
-                clearSession('target disconnected')
-            else
-                processDeadline()
-            end
-            
-            lastLogicTick = currentTick
+        if session.active and not session.testMode and session.targetId and not sampIsPlayerConnected(session.targetId) then
+            chatInfo('Кандидат вышел из игры. Проверка остановлена.')
+            clearSession('target disconnected')
+        else
+            processDeadline()
         end
     end
 end
