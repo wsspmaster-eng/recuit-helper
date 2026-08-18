@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('67')
-script_description('Recruit Helper 67: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('6.8')
+script_description('Recruit Helper 6.8: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -966,6 +966,10 @@ local AUTO_BINDER = {
     startedAt = 0,
     discordNextAt = 0,
 }
+
+local function autoBinderNowMs()
+    return os.time() * 1000
+end
 
 local DISCORD_BIND = {
     '/rb Уважаемые военнослужащие Армии г. Лос-Сантос.',
@@ -3131,7 +3135,7 @@ function main()
         end
         local outboundCount = type(outboundQueue) == 'table' and #outboundQueue or -1
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
-        local message = 'v67 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
+        local message = 'v6.8 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
         local okChat, chatErr = pcall(function() chatInfo(message) end)
         consolePrint('[Recruit DIAG] ' .. message)
         debugLog('DIAG: ' .. message)
@@ -3160,7 +3164,7 @@ local function compareVersionParts(a, b)
     return 0
 end
 
-local function currentScriptVersion() return '67' end
+local function currentScriptVersion() return '6.8' end
 
 local function updaterDownload(url, path, callback)
     local callbackDone = false
@@ -3472,7 +3476,7 @@ end
     end)
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 67 ==========')
+    chatInfo('========== Recruit Helper 6.8 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -3586,9 +3590,9 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 67 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 6.8 loaded. Safe CEF mode enabled; FFI packet scan removed.')
     initAutoBinderSchedule(true)
-    chatInfo('Recruit Helper 67 загружен.')
+    chatInfo('Recruit Helper 6.8 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
