@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('68')
-script_description('Recruit Helper 68: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('69')
+script_description('Recruit Helper 69: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -49,23 +49,7 @@ local CONFIG = {
     -- Обновление Recruit Helper.
     updateManifestUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/version.txt',
     updateScriptUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/recruit_helper.lua',
-    updateAssets = {
-        {
-            name = 'fart.mp3',
-            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit_warnings/fart.mp3',
-            relativePath = 'hit-warnings\\fart.mp3',
-        },
-        {
-            name = 'warning.mp3',
-            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit_warnings/warning.mp3',
-            relativePath = 'hit-warnings\\warning.mp3',
-        },
-        {
-            name = 'general.mp3',
-            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit_warnings/general.mp3',
-            relativePath = 'hit-warnings\\general.mp3',
-        },
-    },
+    updateAssets = {},            -- Звуки удалены
     updateCheckOnStart = true,    -- автоматическая проверка при входе
 
     -- Автобиндер.
@@ -115,64 +99,18 @@ local klaksonDisabled = false
 
 local PROTECTED_HIT_TARGETS = {
     Suleyman_Kanuni = {
-        sound = 'warning.mp3',
         message = 'Не трогай меня сука!!',
         color = 0xFF4444,
     },
     Bruce_Tayson = {
-        sound = 'fart.mp3',
         message = 'НЕ ТРОГАЙ РУКАМИ! РУКИ ИСПАЧКАЕШЬ В КАКАШКАХ!!!!!',
         color = 0xFF4444,
     },
     Jensen_Ackles = {
-        sound = 'general.mp3',
         message = 'Не бей крутого генерала, чмо!!',
         color = 0xFFCC44,
     },
 }
-
-local function protectedHitSoundPath(fileName)
-    local thisPath = thisScript() and thisScript().path or ''
-    local base = thisPath:match('^(.*[\\/])')
-
-    if not base or base == '' then
-        base = tostring(getWorkingDirectory() or '')
-        if base:sub(-1) ~= '\\' and base:sub(-1) ~= '/' then
-            base = base .. '\\'
-        end
-    end
-
-    return base .. 'hit-warnings\\' .. tostring(fileName or '')
-end
-
-local function playProtectedHitSound(fileName)
-    local path = protectedHitSoundPath(fileName)
-    if type(doesFileExist) == 'function' and not doesFileExist(path) then
-        return false
-    end
-    if type(loadAudioStream) ~= 'function' or type(setAudioStreamState) ~= 'function' then
-        return false
-    end
-
-    local ok = pcall(function()
-        if protectedHitAudio and type(releaseAudioStream) == 'function' then
-            pcall(releaseAudioStream, protectedHitAudio)
-            protectedHitAudio = nil
-        end
-
-        protectedHitAudio = loadAudioStream(path)
-        if not protectedHitAudio then
-            error('loadAudioStream failed')
-        end
-
-        if type(setAudioStreamVolume) == 'function' then
-            pcall(setAudioStreamVolume, protectedHitAudio, 1.0)
-        end
-        setAudioStreamState(protectedHitAudio, 1)
-    end)
-
-    return ok
-end
 
 local function checkProtectedHit(playerId)
     playerId = tonumber(playerId)
@@ -193,12 +131,10 @@ local function checkProtectedHit(playerId)
     local target = PROTECTED_HIT_TARGETS[nick]
     if not target then return end
 
-    -- Фиксируем кулдаун даже когда звук Jensen_Ackles выключен,
-    -- чтобы сообщение не спамилось при каждом пакете урона.
+    -- Фиксируем кулдаун
     CREATOR_WARN_COOLDOWN = now
 
     if nick == 'Jensen_Ackles' and klaksonDisabled then
-        -- /klakson отключает только звук; текстовое предупреждение остаётся.
         if target.message then
             sampAddChatMessage(cp(target.message), target.color or 0xFFCC44)
         end
@@ -207,12 +143,6 @@ local function checkProtectedHit(playerId)
 
     if target.message then
         sampAddChatMessage(cp(target.message), target.color or 0xFFCC44)
-    end
-
-    if not playProtectedHitSound(target.sound) then
-        pcall(function()
-            sampPlaySound(1085, 0, 0)
-        end)
     end
 end
 
@@ -750,7 +680,7 @@ local AUTO_VOIS = {
     workflowTimeoutMs = 30000,
 }
 
-local AUTO_VOIS_TAG = cp('ВОиС')
+local AUTO_VOIS_TAG = cp('ВНП')
 
 local autoVoisState = {
     active = false,
@@ -900,7 +830,7 @@ local function autoVoisSubmitPlayerId()
             end
             local command = '/settag ' .. idText .. ' ' .. AUTO_VOIS_TAG
             enqueueOutbound(command, 'command', false)
-            autoVoisChat('В очередь поставлено: /settag ' .. idText .. ' ВОиС для ' .. playerNick .. '.')
+            autoVoisChat('В очередь поставлено: /settag ' .. idText .. ' ВНП для ' .. playerNick .. '.')
             autoVoisCancel()
         end)
     end)
@@ -2498,8 +2428,6 @@ local function processCurrentTermAnswer()
         return
     end
     if CONFIG.manualProfessionalCheck then
-        -- В ручном режиме сам факт нажатия ALT означает, что проверяющий
-        -- прочитал ответ и считает его подходящим. Автопроверка текста не запускается.
         chatInfo('Ручной режим: ответ подтверждён вами. Автопроверка отключена; перехожу к финальному вопросу.')
         beginQuestion('q3')
         return
@@ -3135,7 +3063,7 @@ function main()
         end
         local outboundCount = type(outboundQueue) == 'table' and #outboundQueue or -1
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
-        local message = 'v68 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
+        local message = 'v69 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
         local okChat, chatErr = pcall(function() chatInfo(message) end)
         consolePrint('[Recruit DIAG] ' .. message)
         debugLog('DIAG: ' .. message)
@@ -3164,7 +3092,7 @@ local function compareVersionParts(a, b)
     return 0
 end
 
-local function currentScriptVersion() return '68' end
+local function currentScriptVersion() return '69' end
 
 local function updaterDownload(url, path, callback)
     local callbackDone = false
@@ -3476,7 +3404,7 @@ end
     end)
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 68 ==========')
+    chatInfo('========== Recruit Helper 69 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -3590,9 +3518,9 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 68 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 69 loaded. Safe CEF mode enabled; FFI packet scan removed.')
     initAutoBinderSchedule(true)
-    chatInfo('Recruit Helper 68 загружен.')
+    chatInfo('Recruit Helper 69 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
