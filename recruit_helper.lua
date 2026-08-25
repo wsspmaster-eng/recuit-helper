@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('69')
-script_description('Recruit Helper 69: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('70')
+script_description('Recruit Helper 70: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -53,7 +53,7 @@ local CONFIG = {
     updateCheckOnStart = true,    -- автоматическая проверка при входе
 
     -- Автобиндер.
-    autoBinderEnabled = true,          -- общий мастер-переключатель автобиндера
+    autoBinderEnabled = false,         -- общий мастер-переключатель автобиндера (выключен по умолчанию)
     discordBinderEnabled = true,       -- Discord включён
     discordBinderIntervalMs = 3600000, -- Discord: каждые 60 минут
     autoBinderRetryMs = 60000,         -- если идёт призыв/VOiS/очередь занята — повтор через минуту
@@ -906,7 +906,7 @@ local DISCORD_BIND = {
     '/rb Напоминаю о Discord-сервере нашего штата.',
     '/rb Получите роль "Военнослужащий ЛСа" и заходите в канал "Общение ЛСа".',
     '/rb Общайтесь с сослуживцами, задавайте вопросы и следите за важной информацией.',
-    '/rb https://discord.gg/arzspace',
+    '/rb https://discord.gg/GvTeTvfEV',
 }
 
 local function discordBinderInterval()
@@ -3063,7 +3063,7 @@ function main()
         end
         local outboundCount = type(outboundQueue) == 'table' and #outboundQueue or -1
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
-        local message = 'v69 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
+        local message = 'v70 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
         local okChat, chatErr = pcall(function() chatInfo(message) end)
         consolePrint('[Recruit DIAG] ' .. message)
         debugLog('DIAG: ' .. message)
@@ -3092,7 +3092,7 @@ local function compareVersionParts(a, b)
     return 0
 end
 
-local function currentScriptVersion() return '69' end
+local function currentScriptVersion() return '70' end
 
 local function updaterDownload(url, path, callback)
     local callbackDone = false
@@ -3404,7 +3404,7 @@ end
     end)
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 69 ==========')
+    chatInfo('========== Recruit Helper 70 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -3518,9 +3518,9 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 69 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 70 loaded. Safe CEF mode enabled; FFI packet scan removed.')
     initAutoBinderSchedule(true)
-    chatInfo('Recruit Helper 69 загружен.')
+    chatInfo('Recruit Helper 70 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
