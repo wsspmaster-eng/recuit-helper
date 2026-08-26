@@ -1,7 +1,7 @@
 script_name('Recruit Helper')
 script_author('OpenAI')
-script_version('70')
-script_description('Recruit Helper 70: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
+script_version('71')
+script_description('Recruit Helper 71: призыв + Auto VOiS, безопасный CEF, ручное RP-собеседование и /inv.')
 
 require 'lib.moonloader'
 require 'lib.sampfuncs'
@@ -49,14 +49,35 @@ local CONFIG = {
     -- Обновление Recruit Helper.
     updateManifestUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/version.txt',
     updateScriptUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/recruit_helper.lua',
-    updateAssets = {},            -- Звуки удалены
-    updateCheckOnStart = true,    -- автоматическая проверка при входе
+    battlePassScriptUrl = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/battlepass.lua',
+    battlePassAutoLoad = false,
+    updateAssets = {
+        {
+            name = 'fart.mp3',
+            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit_warnings/fart.mp3',
+            relativePath = 'hit-warnings\\fart.mp3',
+        },
+        {
+            name = 'warning.mp3',
+            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit_warnings/warning.mp3',
+            relativePath = 'hit-warnings\\warning.mp3',
+        },
+        {
+            name = 'general.mp3',
+            url = 'https://raw.githubusercontent.com/wsspmaster-eng/recuit-helper/refs/heads/main/moonloader/hit_warnings/general.mp3',
+            relativePath = 'hit-warnings\\general.mp3',
+        },
+    },
+    updateCheckOnStart = false,    -- автоматическая проверка при входе
 
     -- Автобиндер.
-    autoBinderEnabled = false,         -- общий мастер-переключатель автобиндера (выключен по умолчанию)
-    discordBinderEnabled = true,       -- Discord включён
+    autoBinderEnabled = false,          -- общий мастер-переключатель автобиндера
+    battlePassBinderEnabled = false,    -- Battle Pass включён
+    discordBinderEnabled = false,       -- Discord включён
+    autoBinderIntervalMs = 3600000,    -- Battle Pass: каждые 60 минут
     discordBinderIntervalMs = 3600000, -- Discord: каждые 60 минут
     autoBinderRetryMs = 60000,         -- если идёт призыв/VOiS/очередь занята — повтор через минуту
+    battlePassFirstDelayMs = 3600000,  -- первый Battle Pass через 60 минут после запуска
     discordFirstDelayMs = 3600000,     -- первый Discord через 60 минут
 }
 
@@ -99,18 +120,64 @@ local klaksonDisabled = false
 
 local PROTECTED_HIT_TARGETS = {
     Suleyman_Kanuni = {
+        sound = 'warning.mp3',
         message = 'Не трогай меня сука!!',
         color = 0xFF4444,
     },
     Bruce_Tayson = {
+        sound = 'fart.mp3',
         message = 'НЕ ТРОГАЙ РУКАМИ! РУКИ ИСПАЧКАЕШЬ В КАКАШКАХ!!!!!',
         color = 0xFF4444,
     },
     Jensen_Ackles = {
+        sound = 'general.mp3',
         message = 'Не бей крутого генерала, чмо!!',
         color = 0xFFCC44,
     },
 }
+
+local function protectedHitSoundPath(fileName)
+    local thisPath = thisScript() and thisScript().path or ''
+    local base = thisPath:match('^(.*[\\/])')
+
+    if not base or base == '' then
+        base = tostring(getWorkingDirectory() or '')
+        if base:sub(-1) ~= '\\' and base:sub(-1) ~= '/' then
+            base = base .. '\\'
+        end
+    end
+
+    return base .. 'hit-warnings\\' .. tostring(fileName or '')
+end
+
+local function playProtectedHitSound(fileName)
+    local path = protectedHitSoundPath(fileName)
+    if type(doesFileExist) == 'function' and not doesFileExist(path) then
+        return false
+    end
+    if type(loadAudioStream) ~= 'function' or type(setAudioStreamState) ~= 'function' then
+        return false
+    end
+
+    local ok = pcall(function()
+        if protectedHitAudio and type(releaseAudioStream) == 'function' then
+            pcall(releaseAudioStream, protectedHitAudio)
+            protectedHitAudio = nil
+        end
+
+        protectedHitAudio = loadAudioStream(path)
+        if not protectedHitAudio then
+            error('loadAudioStream failed')
+        end
+
+        if type(setAudioStreamVolume) == 'function' then
+            pcall(setAudioStreamVolume, protectedHitAudio, 1.0)
+        end
+        setAudioStreamState(protectedHitAudio, 1)
+    end)
+
+    return ok
+end
 
 local function checkProtectedHit(playerId)
     playerId = tonumber(playerId)
@@ -131,10 +198,12 @@ local function checkProtectedHit(playerId)
     local target = PROTECTED_HIT_TARGETS[nick]
     if not target then return end
 
-    -- Фиксируем кулдаун
+    -- Фиксируем кулдаун даже когда звук Jensen_Ackles выключен,
+    -- чтобы сообщение не спамилось при каждом пакете урона.
     CREATOR_WARN_COOLDOWN = now
 
     if nick == 'Jensen_Ackles' and klaksonDisabled then
+        -- /klakson отключает только звук; текстовое предупреждение остаётся.
         if target.message then
             sampAddChatMessage(cp(target.message), target.color or 0xFFCC44)
         end
@@ -143,6 +212,12 @@ local function checkProtectedHit(playerId)
 
     if target.message then
         sampAddChatMessage(cp(target.message), target.color or 0xFFCC44)
+    end
+
+    if not playProtectedHitSound(target.sound) then
+        pcall(function()
+            sampPlaySound(1085, 0, 0)
+        end)
     end
 end
 
@@ -887,13 +962,15 @@ local function processAutoVois()
 end
 
 -- ============================================================================
--- АВТОБИНДЕР: DISCORD
+-- АВТОБИНДЕР: BATTLE PASS + DISCORD
 -- ============================================================================
 local AUTO_BINDER = {
-    enabled = CONFIG.autoBinderEnabled == true,
+    enabled = CONFIG.autoBinderEnabled == false,
+    battlePassEnabled = CONFIG.battlePassBinderEnabled ~= false,
     discordEnabled = CONFIG.discordBinderEnabled ~= false,
     initialized = false,
     startedAt = 0,
+    battlePassNextAt = 0,
     discordNextAt = 0,
 }
 
@@ -901,13 +978,25 @@ local function autoBinderNowMs()
     return os.time() * 1000
 end
 
+local BATTLE_PASS_BIND = {
+    '/r Уважаемые военнослужащие Армии г. Лос-Сантос.',
+    '/r Спешу сообщить, что на Офф.Портале нашего штата появился Баттл Пасс.',
+    '/r Выполняйте интересные задания и получайте приятные призы.',
+    '/r Успейте принять участие!',
+    '/rb https://forum.arizona-rp.com/threads/11293745/',
+}
+
 local DISCORD_BIND = {
     '/rb Уважаемые военнослужащие Армии г. Лос-Сантос.',
     '/rb Напоминаю о Discord-сервере нашего штата.',
     '/rb Получите роль "Военнослужащий ЛСа" и заходите в канал "Общение ЛСа".',
     '/rb Общайтесь с сослуживцами, задавайте вопросы и следите за важной информацией.',
-    '/rb https://discord.gg/GvTeTvfEV',
+    '/rb https://discord.gg/arzspace',
 }
+
+local function autoBinderInterval()
+    return math.max(60000, tonumber(CONFIG.autoBinderIntervalMs) or 3600000)
+end
 
 local function discordBinderInterval()
     return math.max(60000, tonumber(CONFIG.discordBinderIntervalMs) or 3600000)
@@ -922,6 +1011,7 @@ local function initAutoBinderSchedule(resetAll)
     if AUTO_BINDER.initialized and not resetAll then return end
     AUTO_BINDER.initialized = true
     AUTO_BINDER.startedAt = now
+    AUTO_BINDER.battlePassNextAt = now + math.max(60000, tonumber(CONFIG.battlePassFirstDelayMs) or 3600000)
     AUTO_BINDER.discordNextAt = now + math.max(60000, tonumber(CONFIG.discordFirstDelayMs) or 3600000)
 end
 
@@ -951,6 +1041,15 @@ local function enqueueRadioBinder(lines, title)
     return true
 end
 
+local function sendBattlePassBinderNow(ignoreBusy)
+    local busy, reason = autoBinderIsBusy()
+    if busy and not ignoreBusy then
+        chatInfo('Battle Pass сейчас не отправлен: ' .. tostring(reason) .. '.')
+        return false
+    end
+    return enqueueRadioBinder(BATTLE_PASS_BIND, 'Battle Pass')
+end
+
 local function sendDiscordBinderNow(ignoreBusy)
     local busy, reason = autoBinderIsBusy()
     if busy and not ignoreBusy then
@@ -964,8 +1063,25 @@ local function processAutoBinder()
     if not AUTO_BINDER.enabled then return end
     initAutoBinderSchedule(false)
     local now = autoBinderNowMs()
-    local minFirstDelay = math.max(60000, tonumber(CONFIG.discordFirstDelayMs) or 3600000)
+    local minFirstDelay = math.min(
+        math.max(60000, tonumber(CONFIG.battlePassFirstDelayMs) or 3600000),
+        math.max(60000, tonumber(CONFIG.discordFirstDelayMs) or 3600000)
+    )
     if AUTO_BINDER.startedAt <= 0 or (now - AUTO_BINDER.startedAt) < minFirstDelay then return end
+
+    if AUTO_BINDER.battlePassEnabled and now >= AUTO_BINDER.battlePassNextAt then
+        local busy = autoBinderIsBusy()
+        if busy then
+            AUTO_BINDER.battlePassNextAt = now + autoBinderRetry()
+        else
+            if sendBattlePassBinderNow(true) then
+                AUTO_BINDER.battlePassNextAt = now + autoBinderInterval()
+            else
+                AUTO_BINDER.battlePassNextAt = now + autoBinderRetry()
+            end
+        end
+        return
+    end
 
     if AUTO_BINDER.discordEnabled and now >= AUTO_BINDER.discordNextAt then
         local busy = autoBinderIsBusy()
@@ -990,8 +1106,9 @@ end
 
 local function printAutoBinderStatus()
     initAutoBinderSchedule(false)
+    local bpStatus = AUTO_BINDER.battlePassEnabled and ('ВКЛ, через ' .. autoBinderTimeLeft(AUTO_BINDER.battlePassNextAt)) or 'ВЫКЛ'
     local dcStatus = AUTO_BINDER.discordEnabled and ('ВКЛ, через ' .. autoBinderTimeLeft(AUTO_BINDER.discordNextAt)) or 'ВЫКЛ'
-    chatInfo('Автобиндер: ' .. (AUTO_BINDER.enabled and 'ВКЛ' or 'ВЫКЛ') .. ' | Discord: ' .. dcStatus)
+    chatInfo('Автобиндер: ' .. (AUTO_BINDER.enabled and 'ВКЛ' or 'ВЫКЛ') .. ' | Battle Pass: ' .. bpStatus .. ' | Discord: ' .. dcStatus)
 end
 
 local function setAutoBinderEnabled(value)
@@ -1013,6 +1130,18 @@ end
 
 local function toggleAutoBinder()
     setAutoBinderEnabled(not AUTO_BINDER.enabled)
+end
+
+local function setBattlePassBinderEnabled(value)
+    value = value == true
+    AUTO_BINDER.battlePassEnabled = value
+    if value then
+        AUTO_BINDER.battlePassNextAt = autoBinderNowMs() + math.max(60000, tonumber(CONFIG.battlePassFirstDelayMs) or 3600000)
+        chatInfo('Автобиндер Battle Pass включён.')
+    else
+        chatInfo('Автобиндер Battle Pass выключен.')
+    end
+    printAutoBinderStatus()
 end
 
 local function setDiscordBinderEnabled(value)
@@ -2428,6 +2557,8 @@ local function processCurrentTermAnswer()
         return
     end
     if CONFIG.manualProfessionalCheck then
+        -- В ручном режиме сам факт нажатия ALT означает, что проверяющий
+        -- прочитал ответ и считает его подходящим. Автопроверка текста не запускается.
         chatInfo('Ручной режим: ответ подтверждён вами. Автопроверка отключена; перехожу к финальному вопросу.')
         beginQuestion('q3')
         return
@@ -3063,7 +3194,7 @@ function main()
         end
         local outboundCount = type(outboundQueue) == 'table' and #outboundQueue or -1
         local scheduledCount = type(scheduledActions) == 'table' and #scheduledActions or -1
-        local message = 'v70 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
+        local message = 'v71 | Lua: ' .. (memoryKb >= 0 and (tostring(memoryKb) .. ' KB') or 'N/A') .. ' | Queue: ' .. tostring(outboundCount) .. ' | Tasks: ' .. tostring(scheduledCount) .. ' | Recruit: ' .. recruitStage .. ' | VOiS: ' .. (voisActive and 'ON/' or 'OFF/') .. voisStep
         local okChat, chatErr = pcall(function() chatInfo(message) end)
         consolePrint('[Recruit DIAG] ' .. message)
         debugLog('DIAG: ' .. message)
@@ -3092,7 +3223,7 @@ local function compareVersionParts(a, b)
     return 0
 end
 
-local function currentScriptVersion() return '70' end
+local function currentScriptVersion() return '71' end
 
 local function updaterDownload(url, path, callback)
     local callbackDone = false
@@ -3160,6 +3291,102 @@ local function updaterDownload(url, path, callback)
         moonloaderFinished = true
         systemFallback('не удалось запустить downloadUrlToFile: ' .. tostring(err))
     end
+end
+
+local function isValidLuaScriptFile(path)
+    local f = io.open(path, 'rb')
+    if not f then return false, 'файл не найден' end
+    local data = f:read('*a') or ''
+    f:close()
+    if #data < 32 then return false, 'файл слишком маленький (' .. tostring(#data) .. ' байт)' end
+    local lower = data:sub(1, 512):lower()
+    if lower:find('<!doctype html', 1, true) or lower:find('<html', 1, true) or lower:find('404: not found', 1, true) then return false, 'вместо Lua получен HTML/ошибка GitHub' end
+    local loader = loadstring or load
+    if type(loader) == 'function' then
+        local chunk, syntaxErr = loader(data, '@battlepass.lua')
+        if not chunk then return false, 'ошибка синтаксиса: ' .. tostring(syntaxErr) end
+    end
+    return true, #data
+end
+
+local function startBattlePassScript(path)
+    local ok, result = pcall(function()
+        if type(script) == 'table' and type(script.load) == 'function' then return script.load(path) end
+        if type(loadScript) == 'function' then return loadScript(path) end
+        error('в этой сборке MoonLoader нет script.load/loadScript')
+    end)
+    if not ok then return false, tostring(result) end
+    return true, result
+end
+
+local function downloadBattlePassScript()
+    if not CONFIG.battlePassAutoLoad or not CONFIG.battlePassScriptUrl then return end
+    local moonloaderDir = getWorkingDirectory()
+    local finalPath = moonloaderDir .. '\\battlepass.lua'
+    local tempPath = moonloaderDir .. '\\battlepass.lua.download'
+
+    if type(doesDirectoryExist) == 'function' and type(createDirectory) == 'function' then
+        local okDir, exists = pcall(doesDirectoryExist, moonloaderDir)
+        if not okDir or not exists then pcall(createDirectory, moonloaderDir) end
+    end
+
+    pcall(os.remove, tempPath)
+    debugLog('BattlePass: download start -> ' .. tostring(finalPath))
+
+    updaterDownload(CONFIG.battlePassScriptUrl, tempPath, function(ok, err)
+        if not ok then
+            debugLog('BattlePass download failed: ' .. tostring(err))
+            chatInfo('BattlePass: ошибка загрузки. См. recruit_assistant_debug.log')
+            pcall(os.remove, tempPath)
+            return
+        end
+        local valid, info = isValidLuaScriptFile(tempPath)
+        if not valid then
+            debugLog('BattlePass validation failed: ' .. tostring(info))
+            chatInfo('BattlePass: скачанный файл повреждён: ' .. tostring(info))
+            pcall(os.remove, tempPath)
+            return
+        end
+
+        local backupPath = finalPath .. '.bak'
+        pcall(os.remove, backupPath)
+        local oldExists = false
+        local oldFile = io.open(finalPath, 'rb')
+        if oldFile then
+            oldExists = true
+            oldFile:close()
+            pcall(os.rename, finalPath, backupPath)
+        end
+
+        local renamed, renameErr = os.rename(tempPath, finalPath)
+        if not renamed then
+            if oldExists then pcall(os.rename, backupPath, finalPath) end
+            debugLog('BattlePass replace failed: ' .. tostring(renameErr))
+            chatInfo('BattlePass: не удалось установить файл в moonloader.')
+            return
+        end
+
+        local finalValid, finalInfo = isValidLuaScriptFile(finalPath)
+        if not finalValid then
+            pcall(os.remove, finalPath)
+            if oldExists then pcall(os.rename, backupPath, finalPath) end
+            debugLog('BattlePass final validation failed: ' .. tostring(finalInfo))
+            chatInfo('BattlePass: проверка установленного файла не пройдена.')
+            return
+        end
+
+        pcall(os.remove, backupPath)
+        debugLog('BattlePass installed: ' .. tostring(finalPath) .. ', bytes=' .. tostring(finalInfo))
+
+        local started, startErr = startBattlePassScript(finalPath)
+        if started then
+            chatInfo('BattlePass.lua установлен и загружен в MoonLoader.')
+            debugLog('BattlePass script.load OK: ' .. tostring(finalPath))
+        else
+            debugLog('BattlePass script.load failed: ' .. tostring(startErr))
+            chatInfo('BattlePass.lua установлен, но автозапуск не удался: ' .. tostring(startErr))
+        end
+    end)
 end
 
 local function fileSizeBytes(path)
@@ -3396,15 +3623,20 @@ end
     sampRegisterChatCommand('autobinder', toggleAutoBinder)
     sampRegisterChatCommand('bindon', function() setAutoBinderEnabled(true) end)
     sampRegisterChatCommand('bindoff', function() setAutoBinderEnabled(false) end)
+    sampRegisterChatCommand('bpon', function() setBattlePassBinderEnabled(true) end)
+    sampRegisterChatCommand('bpoff', function() setBattlePassBinderEnabled(false) end)
     sampRegisterChatCommand('dcon', function() setDiscordBinderEnabled(true) end)
     sampRegisterChatCommand('dcoff', function() setDiscordBinderEnabled(false) end)
     sampRegisterChatCommand('bindstatus', printAutoBinderStatus)
+    sampRegisterChatCommand('battlepass', function()
+        if sendBattlePassBinderNow(false) then AUTO_BINDER.battlePassNextAt = autoBinderNowMs() + autoBinderInterval() end
+    end)
     sampRegisterChatCommand('discordls', function()
         if sendDiscordBinderNow(false) then AUTO_BINDER.discordNextAt = autoBinderNowMs() + discordBinderInterval() end
     end)
 
 local function showRecruitHelp()
-    chatInfo('========== Recruit Helper 70 ==========')
+    chatInfo('========== Recruit Helper 71 ==========')
     chatInfo('Основные команды:')
     chatInfo('/near')
     chatInfo('/rrp')
@@ -3441,7 +3673,10 @@ local function showRecruitHelp()
     chatInfo('/autobinder')
     chatInfo('')
     chatInfo('Объявления:')
+    chatInfo('/battlepass')
     chatInfo('/discordls')
+    chatInfo('/bpon')
+    chatInfo('/bpoff')
     chatInfo('/dcon')
     chatInfo('/dcoff')
     chatInfo('')
@@ -3518,9 +3753,9 @@ end
         startRpNicknameCheck(nick, false)
     end)
 
-    debugLog('Recruit Helper 70 loaded. Safe CEF mode enabled; FFI packet scan removed.')
+    debugLog('Recruit Helper 71 loaded. Safe CEF mode enabled; FFI packet scan removed.')
     initAutoBinderSchedule(true)
-    chatInfo('Recruit Helper 70 загружен.')
+    chatInfo('Recruit Helper 71 загружен.')
     chatInfo('Используйте /rhelp для списка команд.')
     printAutoBinderStatus()
     autoVoisChat('Встроенный Auto VOiS v2 активен. Команды: /autovois, /avstate')
@@ -3528,6 +3763,7 @@ end
     if CONFIG.updateCheckOnStart then
         scheduleAction(3000, function()
             checkForUpdate(false)
+            downloadBattlePassScript()
         end)
     end
 
